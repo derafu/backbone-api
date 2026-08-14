@@ -32,7 +32,7 @@ class RouterTest extends TestCase
         $this->router = new Router();
     }
 
-    public function testParsesTheFourSegmentsOfAJobRoute(): void
+    public function testParsesTheFourSegmentsOfAnOperationRoute(): void
     {
         $request = new ServerRequest('POST', '/api/billing/document/builder/build');
 
@@ -41,7 +41,7 @@ class RouterTest extends TestCase
         $this->assertSame('billing', $route->getPackage());
         $this->assertSame('document', $route->getComponent());
         $this->assertSame('builder', $route->getWorker());
-        $this->assertSame('build', $route->getJob());
+        $this->assertSame('build', $route->getOperation());
         $this->assertSame('billing.document.builder', $route->getId());
     }
 
@@ -54,7 +54,7 @@ class RouterTest extends TestCase
         $this->assertSame('billing', $route->getPackage());
         $this->assertNull($route->getComponent());
         $this->assertNull($route->getWorker());
-        $this->assertNull($route->getJob());
+        $this->assertNull($route->getOperation());
     }
 
     public function testEmptyPathHasNoPackageAndNoId(): void
@@ -87,7 +87,7 @@ class RouterTest extends TestCase
 
         $this->expectException(InvalidRouteException::class);
         $this->expectExceptionMessage(
-            'The used route a/b/c/d/e is not valid. As a maximum it can have the structure: /:package/:component/:worker/:job.'
+            'The used route a/b/c/d/e is not valid. As a maximum it can have the structure: /:package/:component/:worker/:operation.'
         );
 
         $this->router->parse($request);

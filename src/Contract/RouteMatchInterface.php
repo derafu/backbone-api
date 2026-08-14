@@ -22,5 +22,5 @@ interface RouteMatchInterface
 
     public function getWorker(): ?string;
 
-    public function getJob(): ?string;
+    public function getOperation(): ?string;
 }

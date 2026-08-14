@@ -18,7 +18,7 @@ use Psr\Http\Message\ServerRequestInterface;
 /**
  * A real, minimal DispatcherInterface that always returns a fixed result,
  * used to test AbstractController in isolation from the real routing and
- * job invocation logic.
+ * operation invocation logic.
  */
 class FixedResultDispatcher implements DispatcherInterface
 {

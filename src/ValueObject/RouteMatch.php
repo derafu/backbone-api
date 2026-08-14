@@ -22,7 +22,7 @@ class RouteMatch implements RouteMatchInterface
         private readonly ?string $package = null,
         private readonly ?string $component = null,
         private readonly ?string $worker = null,
-        private readonly ?string $job = null
+        private readonly ?string $operation = null
     ) {
     }
 
@@ -39,8 +39,8 @@ class RouteMatch implements RouteMatchInterface
             if ($this->worker !== null) {
                 $this->id .= '.' . $this->worker;
             }
-            if ($this->job !== null) {
-                //$this->id .= '.' . $this->job;
+            if ($this->operation !== null) {
+                //$this->id .= '.' . $this->operation;
             }
         }
 
@@ -62,8 +62,8 @@ class RouteMatch implements RouteMatchInterface
         return $this->worker;
     }
 
-    public function getJob(): ?string
+    public function getOperation(): ?string
     {
-        return $this->job;
+        return $this->operation;
     }
 }

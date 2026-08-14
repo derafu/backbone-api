@@ -16,13 +16,13 @@ use Derafu\Translation\Exception\Logic\TranslatableInvalidArgumentException;
 
 /**
  * Thrown when the requested URL does not match the expected
- * `/:package/:component/:worker/:job` route structure.
+ * `/:package/:component/:worker/:operation` route structure.
  */
 class InvalidRouteException extends TranslatableInvalidArgumentException
 {
     /**
      * Returns a new exception for a path that does not match the expected
-     * `/:package/:component/:worker/:job` route structure.
+     * `/:package/:component/:worker/:operation` route structure.
      *
      * @param string $path The requested path.
      * @return self
@@ -30,7 +30,7 @@ class InvalidRouteException extends TranslatableInvalidArgumentException
     public static function forPath(string $path): self
     {
         return new self([
-            'The used route {path} is not valid. As a maximum it can have the structure: /:package/:component/:worker/:job.',
+            'The used route {path} is not valid. As a maximum it can have the structure: /:package/:component/:worker/:operation.',
             'path' => $path,
         ]);
     }

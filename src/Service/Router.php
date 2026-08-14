@@ -32,7 +32,7 @@ class Router implements RouterInterface
      *  - `package`.
      *  - `component`.
      *  - `worker`.
-     *  - `job`.
+     *  - `operation`.
      *
      * If any of the attributes is `null` it means that the attribute was not
      * requested. In that case, for example, the list associated with the
@@ -58,7 +58,7 @@ class Router implements RouterInterface
             package: $parts[0] ?: null,
             component: ($parts[1] ?? null) ?: null,
             worker: ($parts[2] ?? null) ?: null,
-            job: ($parts[3] ?? null) ?: null,
+            operation: ($parts[3] ?? null) ?: null,
         );
     }
 }

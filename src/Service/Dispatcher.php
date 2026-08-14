@@ -21,7 +21,7 @@ use Psr\Http\Message\ServerRequestInterface;
  * Handler of the requests of the application.
  *
  * Takes a route resolved by the router and executes it. The actual
- * resolution of the worker and invocation of the job is delegated to
+ * resolution of the worker and invocation of the operation is delegated to
  * `derafu/backbone-dispatcher`, which is transport-agnostic. This class only
  * deals with the HTTP-specific concerns: parsing the route, listing
  * packages/components/workers as HATEOAS resources, serving the OpenAPI
@@ -73,19 +73,19 @@ class Dispatcher implements DispatcherInterface
                 $route->getPackage(),
                 $route->getComponent()
             );
-        } elseif ($route->getJob() === null) {
+        } elseif ($route->getOperation() === null) {
             return $this->handleWorker(
                 $route->getPackage(),
                 $route->getComponent(),
                 $route->getWorker()
             );
         } else {
-            return $this->handleJob(
+            return $this->handleOperation(
                 $request,
                 $route->getPackage(),
                 $route->getComponent(),
                 $route->getWorker(),
-                $route->getJob()
+                $route->getOperation()
             );
         }
     }
@@ -151,30 +151,30 @@ class Dispatcher implements DispatcherInterface
             $package,
             $component,
             $worker,
-            withJobs: true
+            withOperations: true
         );
     }
 
     /**
-     * Handles the execution of a job in the API.
+     * Handles the execution of an operation in the API.
      *
      * @param ServerRequestInterface $request
      * @param string $package
      * @param string $component
      * @param string $worker
-     * @param string $job
+     * @param string $operation
      * @return mixed
      */
-    private function handleJob(
+    private function handleOperation(
         ServerRequestInterface $request,
         string $package,
         string $component,
         string $worker,
-        string $job
+        string $operation
     ): mixed {
         $requestContent = json_decode($request->getBody()->getContents(), true);
         $params = $requestContent['parameters'] ?? [];
 
-        return $this->dispatcher->invoke($package, $component, $worker, $job, $params);
+        return $this->dispatcher->invoke($package, $component, $worker, $operation, $params);
     }
 }

@@ -80,24 +80,24 @@ class Documenter
 
             foreach ($package->getComponents() as $componentName => $component) {
                 $tag = $this->getTagDocumentation($component);
-                $componentHasJobs = false;
+                $componentHasOperations = false;
                 foreach ($component->getWorkers() as $workerName => $worker) {
-                    $jobs = $this->inspector->getApiResources($worker);
-                    if (!empty($jobs)) {
-                        $componentHasJobs = true;
+                    $operations = $this->inspector->getApiResources($worker);
+                    if (!empty($operations)) {
+                        $componentHasOperations = true;
                     }
-                    foreach ($jobs as $jobInfo) {
-                        $jobName = $jobInfo['name'];
-                        $path = "/$packageName/$componentName/$workerName/$jobName";
-                        $docs['paths'][$path] = $this->getJobDocumentation(
-                            array_merge($jobInfo, [
+                    foreach ($operations as $operationInfo) {
+                        $operationName = $operationInfo['name'];
+                        $path = "/$packageName/$componentName/$workerName/$operationName";
+                        $docs['paths'][$path] = $this->getOperationDocumentation(
+                            array_merge($operationInfo, [
                                 'resourceTags' => [$tag['name']],
-                                'operationId' => $worker->getId() . '::' . $jobInfo['name'],
+                                'operationId' => $worker->getId() . '::' . $operationInfo['name'],
                             ])
                         );
                     }
                 }
-                if ($componentHasJobs) {
+                if ($componentHasOperations) {
                     $docs['tags'][] = $tag;
                 }
             }
@@ -113,21 +113,21 @@ class Documenter
     }
 
     /**
-     * Generates the documentation of a particular job.
+     * Generates the documentation of a particular operation.
      *
-     * @param array $jobInfo
+     * @param array $operationInfo
      * @return array
      */
-    private function getJobDocumentation(array $jobInfo): array
+    private function getOperationDocumentation(array $operationInfo): array
     {
-        $parameters = $jobInfo['parameters'];
+        $parameters = $operationInfo['parameters'];
 
         $post = [
-            'tags' => $jobInfo['resourceTags'],
-            'summary' => $jobInfo['summary'],
-            'description' => $jobInfo['description'] ?? '',
-            'operationId' => $jobInfo['operationId'],
-            'deprecated' => $jobInfo['deprecated'] ?? false,
+            'tags' => $operationInfo['resourceTags'],
+            'summary' => $operationInfo['summary'],
+            'description' => $operationInfo['description'] ?? '',
+            'operationId' => $operationInfo['operationId'],
+            'deprecated' => $operationInfo['deprecated'] ?? false,
             'requestBody' => [
                 'description' => null, // TODO: Add description from API resource or DocBlock (?).
                 'required' => true,
@@ -138,7 +138,7 @@ class Documenter
                             'properties' => [
                                 'parameters' => [
                                     'type' => 'object',
-                                    'description' => 'Parameters specific to the job.',
+                                    'description' => 'Parameters specific to the operation.',
                                     'properties' => $this->getParametersSchema($parameters),
                                     'required' => array_column(
                                         array_filter(
@@ -147,12 +147,12 @@ class Documenter
                                         ),
                                         'name'
                                     ),
-                                    'example' => $jobInfo['apiResource']['parametersExample'] ?? null,
+                                    'example' => $operationInfo['apiResource']['parametersExample'] ?? null,
                                 ],
                                 'options' => [
                                     'type' => 'object',
-                                    'description' => 'Additional options for the job.',
-                                    'example' => $jobInfo['apiResource']['optionsExample'] ?? null,
+                                    'description' => 'Additional options for the operation.',
+                                    'example' => $operationInfo['apiResource']['optionsExample'] ?? null,
                                 ],
                             ],
                             'required' => !empty(array_filter(
@@ -170,14 +170,14 @@ class Documenter
             'responses' => [],
         ];
 
-        if (!empty($jobInfo['links'])) {
+        if (!empty($operationInfo['links'])) {
             $post['externalDocs'] = [
-                'url' => $jobInfo['links'][0]['url'],
-                'description' => $jobInfo['links'][0]['description'],
+                'url' => $operationInfo['links'][0]['url'],
+                'description' => $operationInfo['links'][0]['description'],
             ];
         }
 
-        foreach ($jobInfo['apiResource']['responses'] as $code => $response) {
+        foreach ($operationInfo['apiResource']['responses'] as $code => $response) {
             $post['responses'][$code] = [
                 'description' => $response['description'],
             ];

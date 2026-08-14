@@ -82,18 +82,20 @@ class Explorer
     }
 
     /**
-     * Returns the list of jobs of a worker.
+     * Returns the list of operations of a worker.
      *
-     * This will only return as jobs the public methods that the worker has
-     * defined. It will not search for specific jobs for the worker, or search
-     * for classes that implement JobInterface.
+     * An "operation" here is simply a public method of the worker,
+     * discovered via reflection. This is unrelated to `derafu/backbone`'s
+     * own `JobInterface`/`#[Job]` (a separate, formally registered service
+     * type): this method never looks for classes implementing
+     * `JobInterface`, only for public methods on the worker instance itself.
      *
      * @param string $package
      * @param string $component
      * @param string $worker
      * @return array
      */
-    public function getJobs(
+    public function getOperations(
         string $package,
         string $component,
         string $worker
@@ -113,7 +115,7 @@ class Explorer
         );
 
         return array_map(
-            fn ($info) => $this->getJob($package, $component, $worker, $info),
+            fn ($info) => $this->getOperation($package, $component, $worker, $info),
             $methods
         );
     }
@@ -203,14 +205,14 @@ class Explorer
      * @param string $package
      * @param string $component
      * @param string $worker
-     * @param boolean $withJobs
+     * @param boolean $withOperations
      * @return array
      */
     public function getWorker(
         string $package,
         string $component,
         string $worker,
-        bool $withJobs = false
+        bool $withOperations = false
     ): array {
         $data = [
             'id' => sprintf(
@@ -240,15 +242,15 @@ class Explorer
             ],
         ];
 
-        if ($withJobs) {
-            $data['jobs'] = $this->getJobs($package, $component, $worker);
+        if ($withOperations) {
+            $data['operations'] = $this->getOperations($package, $component, $worker);
         }
 
         return $data;
     }
 
     /**
-     * Returns the data of a specific job.
+     * Returns the data of a specific operation.
      *
      * @param string $package
      * @param string $component
@@ -256,13 +258,13 @@ class Explorer
      * @param array $info
      * @return array
      */
-    public function getJob(
+    public function getOperation(
         string $package,
         string $component,
         string $worker,
         array $info
     ): array {
-        $job = $info['name'];
+        $operation = $info['name'];
         unset($info['name']);
 
         return array_merge([
@@ -271,7 +273,7 @@ class Explorer
                 $package,
                 $component,
                 $worker,
-                $job
+                $operation
             ),
             '_links' => [
                 'self' => [
@@ -281,7 +283,7 @@ class Explorer
                         $package,
                         $component,
                         $worker,
-                        $job
+                        $operation
                     ),
                 ],
                 'parent' => [
