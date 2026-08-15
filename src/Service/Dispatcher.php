@@ -14,7 +14,7 @@ namespace Derafu\BackboneApi\Service;
 
 use Derafu\BackboneApi\Contract\DispatcherInterface;
 use Derafu\BackboneApi\Contract\RouterInterface;
-use Derafu\BackboneDispatcher\Contract\DispatcherInterface as WorkerDispatcherInterface;
+use Derafu\BackboneDispatcher\Contract\DirectDispatcherInterface as WorkerDispatcherInterface;
 use Psr\Http\Message\ServerRequestInterface;
 
 /**
@@ -175,6 +175,6 @@ class Dispatcher implements DispatcherInterface
         $requestContent = json_decode($request->getBody()->getContents(), true);
         $params = $requestContent['parameters'] ?? [];
 
-        return $this->dispatcher->invoke($package, $component, $worker, $operation, $params);
+        return $this->dispatcher->dispatch($package, $component, $worker, $operation, $params);
     }
 }
