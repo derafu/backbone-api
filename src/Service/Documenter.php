@@ -14,6 +14,7 @@ namespace Derafu\BackboneApi\Service;
 
 use Derafu\Backbone\Contract\ComponentInterface;
 use Derafu\Backbone\Contract\PackageRegistryInterface;
+use Derafu\BackboneDispatcher\Contract\OperationPolicyInterface;
 use Derafu\BackboneDispatcher\Exception\ClassNotFoundException;
 use Derafu\BackboneDispatcher\Exception\FromArrayMethodNotFoundException;
 use Derafu\BackboneDispatcher\Exception\InvalidParameterTypeException;
@@ -34,15 +35,25 @@ class Documenter
     /**
      * Constructor with dependencies.
      *
+     * `$operationPolicy` is optional, `null` by default: without one, every
+     * `#[Operation]`-tagged method gets documented, matching the default
+     * `AllowAllOperationPolicy` behavior everywhere else in this ecosystem.
+     * When the application wires a real dispatch chain with a policy of its
+     * own, injecting that same policy here keeps the generated docs
+     * accurate to what a caller can actually dispatch — otherwise this
+     * would document operations a policy silently rejects at dispatch time.
+     *
      * @param PackageRegistryInterface $packageRegistry
      * @param Inspector $inspector
      * @param Caster $caster
+     * @param OperationPolicyInterface|null $operationPolicy
      */
     public function __construct(
         private PackageRegistryInterface $packageRegistry,
         private Inspector $inspector,
         private Caster $caster,
         private Explorer $explorer,
+        private ?OperationPolicyInterface $operationPolicy = null,
     ) {
     }
 
@@ -89,6 +100,19 @@ class Documenter
                 $componentHasOperations = false;
                 foreach ($component->getWorkers() as $workerName => $worker) {
                     $operations = $this->inspector->getTaggedOperations($worker);
+
+                    if ($this->operationPolicy !== null) {
+                        $operations = array_filter(
+                            $operations,
+                            fn ($operationInfo) => $this->operationPolicy->isAllowed(
+                                $packageName,
+                                $componentName,
+                                $workerName,
+                                $operationInfo['name']
+                            )
+                        );
+                    }
+
                     if (!empty($operations)) {
                         $componentHasOperations = true;
                     }

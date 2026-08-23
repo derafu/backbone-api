@@ -12,20 +12,21 @@ declare(strict_types=1);
 
 namespace Derafu\BackboneApi\Service;
 
-use Derafu\Backbone\Contract\PackageRegistryInterface;
-use Derafu\BackboneDispatcher\Service\Reflection\Inspector;
+use Derafu\BackboneDispatcher\Contract\ExplorerInterface;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 
 /**
- * Generates the data that allows the exploration of the API: HATEOAS.
+ * Decorates `derafu/backbone-dispatcher`'s `Explorer` with HATEOAS `_links`
+ * (https://datatracker.ietf.org/doc/html/draft-kelly-json-hal-03).
  *
- * Se usa https://datatracker.ietf.org/doc/html/draft-kelly-json-hal-03
+ * Every id, name, description and policy-based visibility rule comes from
+ * the delegate — this class only adds `self`/`parent` links derived from
+ * the id it gets back.
  */
 class Explorer
 {
     public function __construct(
-        private PackageRegistryInterface $packageRegistry,
-        private Inspector $inspector,
+        private ExplorerInterface $explorer,
         private ParameterBagInterface $parameterBag
     ) {
     }
@@ -38,8 +39,8 @@ class Explorer
     public function getPackages(): array
     {
         return array_map(
-            fn ($package) => $this->getPackage($package),
-            array_keys($this->packageRegistry->getPackages())
+            fn (array $package) => $this->withLinks($package),
+            $this->explorer->getPackages()
         );
     }
 
@@ -52,12 +53,8 @@ class Explorer
     public function getComponents(string $package): array
     {
         return array_map(
-            fn ($component) => $this->getComponent($package, $component),
-            array_keys(
-                $this->packageRegistry
-                ->getPackage($package)
-                ->getComponents()
-            )
+            fn (array $component) => $this->withLinks($component),
+            $this->explorer->getComponents($package)
         );
     }
 
@@ -71,24 +68,13 @@ class Explorer
     public function getWorkers(string $package, string $component): array
     {
         return array_map(
-            fn ($worker) => $this->getWorker($package, $component, $worker),
-            array_keys(
-                $this->packageRegistry
-                ->getPackage($package)
-                ->getComponent($component)
-                ->getWorkers()
-            )
+            fn (array $worker) => $this->withLinks($worker),
+            $this->explorer->getWorkers($package, $component)
         );
     }
 
     /**
      * Returns the list of operations of a worker.
-     *
-     * An "operation" here is simply a public method of the worker,
-     * discovered via reflection. This is unrelated to `derafu/backbone`'s
-     * own `JobInterface`/`#[Job]` (a separate, formally registered service
-     * type): this method never looks for classes implementing
-     * `JobInterface`, only for public methods on the worker instance itself.
      *
      * @param string $package
      * @param string $component
@@ -100,23 +86,9 @@ class Explorer
         string $component,
         string $worker
     ): array {
-        $workerInstance =
-            $this->packageRegistry
-            ->getPackage($package)
-            ->getComponent($component)
-            ->getWorker($worker)
-        ;
-
-        $methods = $this->inspector->getPublicMethods($workerInstance);
-        $methods = array_map(
-            fn ($key, $value) => array_merge($value, ['name' => $key]),
-            array_keys($methods),
-            $methods
-        );
-
         return array_map(
-            fn ($info) => $this->getOperation($package, $component, $worker, $info),
-            $methods
+            fn (array $operation) => $this->withLinks($operation),
+            $this->explorer->getOperations($package, $component, $worker)
         );
     }
 
@@ -131,21 +103,7 @@ class Explorer
         string $package,
         bool $withComponents = false
     ): array {
-        $data = [
-            'id' => $package,
-            '_links' => [
-                'self' => [
-                    'href' => sprintf(
-                        '%s/%s',
-                        $this->getUrl(),
-                        $package
-                    ),
-                ],
-                'parent' => [
-                    'href' => $this->getUrl(),
-                ],
-            ],
-        ];
+        $data = $this->withLinks($this->explorer->getPackage($package));
 
         if ($withComponents) {
             $data['components'] = $this->getComponents($package);
@@ -167,30 +125,7 @@ class Explorer
         string $component,
         bool $withWorkers = false
     ): array {
-        $data = [
-            'id' => sprintf(
-                '%s.%s',
-                $package,
-                $component
-            ),
-            '_links' => [
-                'self' => [
-                    'href' => sprintf(
-                        '%s/%s/%s',
-                        $this->getUrl(),
-                        $package,
-                        $component
-                    ),
-                ],
-                'parent' => [
-                    'href' => sprintf(
-                        '%s/%s',
-                        $this->getUrl(),
-                        $package
-                    ),
-                ],
-            ],
-        ];
+        $data = $this->withLinks($this->explorer->getComponent($package, $component));
 
         if ($withWorkers) {
             $data['workers'] = $this->getWorkers($package, $component);
@@ -214,33 +149,7 @@ class Explorer
         string $worker,
         bool $withOperations = false
     ): array {
-        $data = [
-            'id' => sprintf(
-                '%s.%s.%s',
-                $package,
-                $component,
-                $worker
-            ),
-            '_links' => [
-                'self' => [
-                    'href' => sprintf(
-                        '%s/%s/%s/%s',
-                        $this->getUrl(),
-                        $package,
-                        $component,
-                        $worker
-                    ),
-                ],
-                'parent' => [
-                    'href' => sprintf(
-                        '%s/%s/%s',
-                        $this->getUrl(),
-                        $package,
-                        $component
-                    ),
-                ],
-            ],
-        ];
+        $data = $this->withLinks($this->explorer->getWorker($package, $component, $worker));
 
         if ($withOperations) {
             $data['operations'] = $this->getOperations($package, $component, $worker);
@@ -255,48 +164,18 @@ class Explorer
      * @param string $package
      * @param string $component
      * @param string $worker
-     * @param array $info
+     * @param string $operation
      * @return array
      */
     public function getOperation(
         string $package,
         string $component,
         string $worker,
-        array $info
+        string $operation
     ): array {
-        $operation = $info['name'];
-        unset($info['name']);
-
-        return array_merge([
-            'id' => sprintf(
-                '%s.%s.%s.%s',
-                $package,
-                $component,
-                $worker,
-                $operation
-            ),
-            '_links' => [
-                'self' => [
-                    'href' => sprintf(
-                        '%s/%s/%s/%s/%s',
-                        $this->getUrl(),
-                        $package,
-                        $component,
-                        $worker,
-                        $operation
-                    ),
-                ],
-                'parent' => [
-                    'href' => sprintf(
-                        '%s/%s/%s/%s',
-                        $this->getUrl(),
-                        $package,
-                        $component,
-                        $worker
-                    ),
-                ],
-            ],
-        ], $info);
+        return $this->withLinks(
+            $this->explorer->getOperation($package, $component, $worker, $operation)
+        );
     }
 
     /**
@@ -307,5 +186,40 @@ class Explorer
     public function getUrl(): string
     {
         return $this->parameterBag->get('env.APP_URL') . '/api';
+    }
+
+    /**
+     * Adds `self`/`parent` HATEOAS links derived from a resource's id.
+     *
+     * The hierarchy separator (`.`) and the operation separator (`::`)
+     * both become URL path segments, since package/component/worker/
+     * operation names never contain either.
+     *
+     * @param array $data
+     * @return array
+     */
+    private function withLinks(array $data): array
+    {
+        $segments = $data['id'] === ''
+            ? []
+            : explode('.', str_replace('::', '.', (string) $data['id']));
+
+        $data['_links'] = [
+            'self' => ['href' => $this->buildUrl($segments)],
+            'parent' => ['href' => $this->buildUrl(array_slice($segments, 0, -1))],
+        ];
+
+        return $data;
+    }
+
+    /**
+     * @param string[] $segments
+     * @return string
+     */
+    private function buildUrl(array $segments): string
+    {
+        return $segments === []
+            ? $this->getUrl()
+            : $this->getUrl() . '/' . implode('/', $segments);
     }
 }

@@ -26,16 +26,15 @@
     },
     "require": {
         "php": "^8.5",
-        "psr/http-message": "^2.0",
-        "derafu/backbone": "dev-main",
         "derafu/backbone-dispatcher": "dev-main",
-        "derafu/translation": "dev-main"
+        "derafu/translation": "dev-main",
+        "psr/http-message": "^2.0"
     },
     "require-dev": {
         "ext-xdebug": "*",
         "friendsofphp/php-cs-fixer": "^3.95",
         "phpstan/phpstan": "^2.2",
-        "phpunit/phpunit": "^13.2",
+        "phpunit/phpunit": "^13.3",
         "nyholm/psr7": "^1.8"
     },
     "scripts": {
