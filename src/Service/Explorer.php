@@ -13,7 +13,7 @@ declare(strict_types=1);
 namespace Derafu\BackboneApi\Service;
 
 use Derafu\Backbone\Contract\PackageRegistryInterface;
-use Derafu\BackboneDispatcher\Service\Inspector;
+use Derafu\BackboneDispatcher\Service\Reflection\Inspector;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 
 /**

@@ -14,8 +14,14 @@ namespace Derafu\BackboneApi\Service;
 
 use Derafu\Backbone\Contract\ComponentInterface;
 use Derafu\Backbone\Contract\PackageRegistryInterface;
-use Derafu\BackboneDispatcher\Service\Caster;
-use Derafu\BackboneDispatcher\Service\Inspector;
+use Derafu\BackboneDispatcher\Exception\ClassNotFoundException;
+use Derafu\BackboneDispatcher\Exception\FromArrayMethodNotFoundException;
+use Derafu\BackboneDispatcher\Exception\InvalidParameterTypeException;
+use Derafu\BackboneDispatcher\Exception\MissingParameterException;
+use Derafu\BackboneDispatcher\Exception\NoDeserializerFoundException;
+use Derafu\BackboneDispatcher\Exception\OperationNotAllowedException;
+use Derafu\BackboneDispatcher\Service\Reflection\Inspector;
+use Derafu\BackboneDispatcher\Service\Resolution\Caster;
 
 // use Opis\JsonSchema\Errors\ErrorFormatter as JsonErrorFormatter;
 // use Opis\JsonSchema\Validator as JsonValidator;
@@ -82,7 +88,7 @@ class Documenter
                 $tag = $this->getTagDocumentation($component);
                 $componentHasOperations = false;
                 foreach ($component->getWorkers() as $workerName => $worker) {
-                    $operations = $this->inspector->getApiResources($worker);
+                    $operations = $this->inspector->getTaggedOperations($worker);
                     if (!empty($operations)) {
                         $componentHasOperations = true;
                     }
@@ -129,7 +135,10 @@ class Documenter
             'operationId' => $operationInfo['operationId'],
             'deprecated' => $operationInfo['deprecated'] ?? false,
             'requestBody' => [
-                'description' => null, // TODO: Add description from API resource or DocBlock (?).
+                // No separate text exists for this: the body is always the
+                // same shape (parameters wrapped in one envelope), nothing
+                // more specific than the operation's own description above.
+                'description' => null,
                 'required' => true,
                 'content' => [
                     'application/json' => [
@@ -147,12 +156,7 @@ class Documenter
                                         ),
                                         'name'
                                     ),
-                                    'example' => $operationInfo['apiResource']['parametersExample'] ?? null,
-                                ],
-                                'options' => [
-                                    'type' => 'object',
-                                    'description' => 'Additional options for the operation.',
-                                    'example' => $operationInfo['apiResource']['optionsExample'] ?? null,
+                                    'example' => $this->getParametersExample($parameters),
                                 ],
                             ],
                             'required' => !empty(array_filter(
@@ -177,9 +181,9 @@ class Documenter
             ];
         }
 
-        foreach ($operationInfo['apiResource']['responses'] as $code => $response) {
-            $post['responses'][$code] = [
-                'description' => $response['description'],
+        foreach ($operationInfo['operation']['results'] ?? [] as $scenario => $result) {
+            $post['responses'][$this->resolveHttpStatus($scenario)] = [
+                'description' => $result['description'] ?? '',
             ];
         }
 
@@ -188,8 +192,8 @@ class Documenter
                 200 => [
                     'description' => 'Success: The request was successful.',
                 ],
-                400 => [
-                    'description' => 'Error: The request was unsuccessful (error in the request).',
+                422 => [
+                    'description' => 'Error: One or more parameters failed validation.',
                 ],
                 500 => [
                     'description' => 'Failed: The request failed to be processed (error in the server).',
@@ -227,6 +231,59 @@ class Documenter
         }
 
         return $doc;
+    }
+
+    /**
+     * Resolves the HTTP status to document for one `#[Operation(results:
+     * ...)]` scenario key.
+     *
+     * `Operation::$results` is keyed by scenario (`'success'`, or the FQCN
+     * of a thrown exception), not by HTTP status — the attribute lives in
+     * `derafu/backbone` and stays transport-agnostic on purpose (see its
+     * docblock). Resolving a scenario to an actual status is this
+     * (HTTP-specific) package's job, mirroring the same
+     * class-to-status resolution `derafu/http`'s `ProblemFactory` already
+     * does for real error handling: a known scenario gets its own accurate
+     * status, anything undeclared falls back to 500 rather than being
+     * forced into a generic "400 or 500" binary.
+     *
+     * @param string $scenario
+     * @return int
+     */
+    private function resolveHttpStatus(string $scenario): int
+    {
+        return match ($scenario) {
+            'success' => 200,
+            OperationNotAllowedException::class => 403,
+            MissingParameterException::class,
+            InvalidParameterTypeException::class,
+            NoDeserializerFoundException::class,
+            ClassNotFoundException::class,
+            FromArrayMethodNotFoundException::class => 422,
+            default => 500,
+        };
+    }
+
+    /**
+     * Builds the whole-body example for an operation's parameters from
+     * whatever per-parameter `'example'` values `#[Operation(parameters:
+     * ...)]` provided — `Inspector` already merges those onto the
+     * reflected parameter list, so this only needs to collect them.
+     *
+     * @param array $parameters
+     * @return array|null
+     */
+    private function getParametersExample(array $parameters): ?array
+    {
+        $example = [];
+
+        foreach ($parameters as $param) {
+            if (array_key_exists('example', $param)) {
+                $example[$param['name']] = $param['example'];
+            }
+        }
+
+        return $example !== [] ? $example : null;
     }
 
     /**
