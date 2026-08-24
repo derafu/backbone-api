@@ -15,12 +15,6 @@ namespace Derafu\BackboneApi\Service;
 use Derafu\Backbone\Contract\ComponentInterface;
 use Derafu\Backbone\Contract\PackageRegistryInterface;
 use Derafu\BackboneDispatcher\Contract\OperationPolicyInterface;
-use Derafu\BackboneDispatcher\Exception\ClassNotFoundException;
-use Derafu\BackboneDispatcher\Exception\FromArrayMethodNotFoundException;
-use Derafu\BackboneDispatcher\Exception\InvalidParameterTypeException;
-use Derafu\BackboneDispatcher\Exception\MissingParameterException;
-use Derafu\BackboneDispatcher\Exception\NoDeserializerFoundException;
-use Derafu\BackboneDispatcher\Exception\OperationNotAllowedException;
 use Derafu\BackboneDispatcher\Service\Reflection\Inspector;
 use Derafu\BackboneDispatcher\Service\Resolution\Caster;
 
@@ -46,6 +40,7 @@ class Documenter
      * @param PackageRegistryInterface $packageRegistry
      * @param Inspector $inspector
      * @param Caster $caster
+     * @param HttpStatusResolver $httpStatusResolver
      * @param OperationPolicyInterface|null $operationPolicy
      */
     public function __construct(
@@ -53,6 +48,7 @@ class Documenter
         private Inspector $inspector,
         private Caster $caster,
         private Explorer $explorer,
+        private HttpStatusResolver $httpStatusResolver,
         private ?OperationPolicyInterface $operationPolicy = null,
     ) {
     }
@@ -206,7 +202,7 @@ class Documenter
         }
 
         foreach ($operationInfo['operation']['results'] ?? [] as $scenario => $result) {
-            $post['responses'][$this->resolveHttpStatus($scenario)] = [
+            $post['responses'][$this->httpStatusResolver->resolve($scenario)] = [
                 'description' => $result['description'] ?? '',
             ];
         }
@@ -255,37 +251,6 @@ class Documenter
         }
 
         return $doc;
-    }
-
-    /**
-     * Resolves the HTTP status to document for one `#[Operation(results:
-     * ...)]` scenario key.
-     *
-     * `Operation::$results` is keyed by scenario (`'success'`, or the FQCN
-     * of a thrown exception), not by HTTP status — the attribute lives in
-     * `derafu/backbone` and stays transport-agnostic on purpose (see its
-     * docblock). Resolving a scenario to an actual status is this
-     * (HTTP-specific) package's job, mirroring the same
-     * class-to-status resolution `derafu/http`'s `ProblemFactory` already
-     * does for real error handling: a known scenario gets its own accurate
-     * status, anything undeclared falls back to 500 rather than being
-     * forced into a generic "400 or 500" binary.
-     *
-     * @param string $scenario
-     * @return int
-     */
-    private function resolveHttpStatus(string $scenario): int
-    {
-        return match ($scenario) {
-            'success' => 200,
-            OperationNotAllowedException::class => 403,
-            MissingParameterException::class,
-            InvalidParameterTypeException::class,
-            NoDeserializerFoundException::class,
-            ClassNotFoundException::class,
-            FromArrayMethodNotFoundException::class => 422,
-            default => 500,
-        };
     }
 
     /**

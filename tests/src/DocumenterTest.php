@@ -14,6 +14,7 @@ namespace Derafu\TestsBackboneApi;
 
 use Derafu\BackboneApi\Service\Documenter;
 use Derafu\BackboneApi\Service\Explorer;
+use Derafu\BackboneApi\Service\HttpStatusResolver;
 use Derafu\BackboneDispatcher\Service\Deserialization\ObjectFactoryRegistry;
 use Derafu\BackboneDispatcher\Service\Discovery\Explorer as DispatcherExplorer;
 use Derafu\BackboneDispatcher\Service\Policy\AllowListOperationPolicy;
@@ -36,6 +37,7 @@ use Symfony\Component\DependencyInjection\ParameterBag\ParameterBag;
  */
 #[CoversClass(Documenter::class)]
 #[UsesClass(Explorer::class)]
+#[UsesClass(HttpStatusResolver::class)]
 class DocumenterTest extends TestCase
 {
     private ExamplePackageRegistry $registry;
@@ -70,6 +72,7 @@ class DocumenterTest extends TestCase
             $this->inspector,
             $this->caster,
             $this->explorer,
+            new HttpStatusResolver(),
         );
 
         $docs = $documenter->document();
@@ -85,6 +88,7 @@ class DocumenterTest extends TestCase
             $this->inspector,
             $this->caster,
             $this->explorer,
+            new HttpStatusResolver(),
             new AllowListOperationPolicy(['example_package.example_component.example_worker::create']),
         );
 
@@ -101,6 +105,7 @@ class DocumenterTest extends TestCase
             $this->inspector,
             $this->caster,
             $this->explorer,
+            new HttpStatusResolver(),
             new AllowListOperationPolicy(['other_package.*']),
         );
 

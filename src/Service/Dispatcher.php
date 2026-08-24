@@ -14,7 +14,9 @@ namespace Derafu\BackboneApi\Service;
 
 use Derafu\BackboneApi\Contract\DispatcherInterface;
 use Derafu\BackboneApi\Contract\RouterInterface;
-use Derafu\BackboneDispatcher\Contract\DirectDispatcherInterface as WorkerDispatcherInterface;
+use Derafu\BackboneDispatcher\Contract\OperationResultInterface;
+use Derafu\BackboneDispatcher\Contract\SafeDispatcherInterface;
+use Derafu\BackboneDispatcher\ValueObject\OperationRequest;
 use Psr\Http\Message\ServerRequestInterface;
 
 /**
@@ -26,6 +28,13 @@ use Psr\Http\Message\ServerRequestInterface;
  * deals with the HTTP-specific concerns: parsing the route, listing
  * packages/components/workers as HATEOAS resources, serving the OpenAPI
  * documentation, and extracting the parameters from the JSON request body.
+ *
+ * `handleOperation()` uses `SafeDispatcherInterface` (never throws) rather
+ * than a lower tier: it returns the resulting `OperationResultInterface`
+ * as-is, unwrapped — `AbstractController` is the single place that turns
+ * any controller result into the final API response, so the
+ * success/failure envelope (and, for a failure, the actual HTTP status)
+ * belongs there, not duplicated here.
  */
 class Dispatcher implements DispatcherInterface
 {
@@ -35,13 +44,13 @@ class Dispatcher implements DispatcherInterface
      * @param RouterInterface $router
      * @param Explorer $explorer
      * @param Documenter $documenter
-     * @param WorkerDispatcherInterface $dispatcher
+     * @param SafeDispatcherInterface $dispatcher
      */
     public function __construct(
         private RouterInterface $router,
         private Explorer $explorer,
         private Documenter $documenter,
-        private WorkerDispatcherInterface $dispatcher,
+        private SafeDispatcherInterface $dispatcher,
     ) {
     }
 
@@ -163,7 +172,7 @@ class Dispatcher implements DispatcherInterface
      * @param string $component
      * @param string $worker
      * @param string $operation
-     * @return mixed
+     * @return OperationResultInterface
      */
     private function handleOperation(
         ServerRequestInterface $request,
@@ -171,10 +180,12 @@ class Dispatcher implements DispatcherInterface
         string $component,
         string $worker,
         string $operation
-    ): mixed {
+    ): OperationResultInterface {
         $requestContent = json_decode($request->getBody()->getContents(), true);
         $params = $requestContent['parameters'] ?? [];
 
-        return $this->dispatcher->dispatch($package, $component, $worker, $operation, $params);
+        $operationRequest = new OperationRequest($package, $component, $worker, $operation, $params);
+
+        return $this->dispatcher->dispatch($operationRequest);
     }
 }
