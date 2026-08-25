@@ -19,9 +19,13 @@ use Derafu\Backbone\Trait\JobsAwareTrait;
 use Derafu\Config\Trait\OptionsAwareTrait;
 
 /**
- * A real worker with two tagged operations, used to verify `Documenter`
- * both discovers `#[Operation]`-tagged methods and, when a policy is
- * injected, only documents the ones it allows.
+ * A real worker with two tagged operations and one untagged public method,
+ * used to verify `Documenter` follows whatever `Explorer`/`ExplorerInterface`
+ * says is visible — including an untagged method under a permissive policy
+ * (the real gap this fixture exists to reproduce: `getStatus()` was never
+ * marked `#[Operation]`, yet a real `DirectDispatcher` with no restrictive
+ * policy would dispatch it just the same) — never its own, separate opinion
+ * based on the `#[Operation]` tag alone.
  */
 class ExampleWorker implements WorkerInterface
 {
@@ -59,5 +63,10 @@ class ExampleWorker implements WorkerInterface
     public function cancel(string $name): array
     {
         return ['name' => $name];
+    }
+
+    public function getStatus(string $name): array
+    {
+        return ['name' => $name, 'status' => 'ok'];
     }
 }

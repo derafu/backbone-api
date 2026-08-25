@@ -12,10 +12,6 @@ declare(strict_types=1);
 
 namespace Derafu\BackboneApi\Service;
 
-use Derafu\Backbone\Contract\ComponentInterface;
-use Derafu\Backbone\Contract\PackageRegistryInterface;
-use Derafu\BackboneDispatcher\Contract\OperationPolicyInterface;
-use Derafu\BackboneDispatcher\Service\Reflection\Inspector;
 use Derafu\BackboneDispatcher\Service\Resolution\Caster;
 
 // use Opis\JsonSchema\Errors\ErrorFormatter as JsonErrorFormatter;
@@ -29,27 +25,28 @@ class Documenter
     /**
      * Constructor with dependencies.
      *
-     * `$operationPolicy` is optional, `null` by default: without one, every
-     * `#[Operation]`-tagged method gets documented, matching the default
-     * `AllowAllOperationPolicy` behavior everywhere else in this ecosystem.
-     * When the application wires a real dispatch chain with a policy of its
-     * own, injecting that same policy here keeps the generated docs
-     * accurate to what a caller can actually dispatch — otherwise this
-     * would document operations a policy silently rejects at dispatch time.
+     * Everything this class documents — which packages/components/workers/
+     * operations exist, their `name`/`summary`/`description`, and each
+     * operation's own reflected data — comes from `$explorer->tree()`
+     * alone. This used
+     * to decide visibility on its own (`Inspector::getTaggedOperations()`,
+     * i.e. "has `#[Operation]`", optionally narrowed by a *separate*
+     * `OperationPolicyInterface` instance passed here) — two independent
+     * opinions that could silently drift from what `DirectDispatcher`
+     * would actually do, documenting either less or more than the API
+     * truly allows. Sourcing everything from `$explorer` instead makes
+     * that impossible: whatever it says is visible is, by construction,
+     * exactly what a real dispatch would accept — and there is nowhere
+     * left for a second, independently-wired policy to disagree with it.
      *
-     * @param PackageRegistryInterface $packageRegistry
-     * @param Inspector $inspector
      * @param Caster $caster
+     * @param Explorer $explorer
      * @param HttpStatusResolver $httpStatusResolver
-     * @param OperationPolicyInterface|null $operationPolicy
      */
     public function __construct(
-        private PackageRegistryInterface $packageRegistry,
-        private Inspector $inspector,
         private Caster $caster,
         private Explorer $explorer,
         private HttpStatusResolver $httpStatusResolver,
-        private ?OperationPolicyInterface $operationPolicy = null,
     ) {
     }
 
@@ -75,56 +72,44 @@ class Documenter
             'paths' => [],
             'tags' => [],
         ];
-        $description = [];
 
-        $packageRegistryDoc = $this->inspector->getClassDoc($this->packageRegistry);
-        $description[] =
-            $packageRegistryDoc['summary'] . "\n\n"
-            . $packageRegistryDoc['description']
-        ;
+        // `tree()` already dropped every package/component/worker/operation
+        // the real dispatch chain's policy would reject, so nothing below
+        // needs to check a policy again — including this envelope's own
+        // top-level `description`, which comes from `tree()`'s own
+        // `summary`/`description` (the package registry's own PHPDoc)
+        // rather than a second, independent lookup.
+        $tree = $this->explorer->tree();
 
-        $packages = $this->packageRegistry->getPackages();
-        foreach ($packages as $packageName => $package) {
-            $packageDoc = $this->inspector->getClassDoc($package);
-            $description[] =
-                '## ' . $packageDoc['summary'] . "\n\n"
-                . $packageDoc['description']
-            ;
+        $description = [$tree['summary'] . "\n\n" . $tree['description']];
 
-            foreach ($package->getComponents() as $componentName => $component) {
-                $tag = $this->getTagDocumentation($component);
-                $componentHasOperations = false;
-                foreach ($component->getWorkers() as $workerName => $worker) {
-                    $operations = $this->inspector->getTaggedOperations($worker);
+        foreach ($tree['packages'] as $packageTree) {
+            $packageName = $packageTree['id'];
+            $description[] = '## ' . $packageTree['summary'] . "\n\n" . $packageTree['description'];
 
-                    if ($this->operationPolicy !== null) {
-                        $operations = array_filter(
-                            $operations,
-                            fn ($operationInfo) => $this->operationPolicy->isAllowed(
-                                $packageName,
-                                $componentName,
-                                $workerName,
-                                $operationInfo['name']
-                            )
-                        );
-                    }
+            foreach ($packageTree['components'] as $componentTree) {
+                // `$componentTree['id']` is `"{$packageName}.{$componentName}"`
+                // — the real registry key, needed for the path below.
+                $componentName = explode('.', $componentTree['id'])[1];
+                $tag = $this->getTagDocumentation($componentTree);
 
-                    if (!empty($operations)) {
-                        $componentHasOperations = true;
-                    }
-                    foreach ($operations as $operationInfo) {
+                if ($componentTree['workers'] !== []) {
+                    $docs['tags'][] = $tag;
+                }
+
+                foreach ($componentTree['workers'] as $workerTree) {
+                    $workerName = explode('.', $workerTree['id'])[2];
+
+                    foreach ($workerTree['operations'] as $operationInfo) {
                         $operationName = $operationInfo['name'];
                         $path = "/$packageName/$componentName/$workerName/$operationName";
                         $docs['paths'][$path] = $this->getOperationDocumentation(
                             array_merge($operationInfo, [
                                 'resourceTags' => [$tag['name']],
-                                'operationId' => $worker->getId() . '::' . $operationInfo['name'],
+                                'operationId' => $workerTree['id'] . '::' . $operationName,
                             ])
                         );
                     }
-                }
-                if ($componentHasOperations) {
-                    $docs['tags'][] = $tag;
                 }
             }
         }
@@ -227,30 +212,23 @@ class Documenter
     }
 
     /**
-     * Generates the documentation of a particular tag.
+     * Generates the documentation of a particular tag, from its component's
+     * own `tree()` entry — `summary` (as the tag's OpenAPI `name`, prose
+     * meant to be read, not `id`/`name`'s routing slug) and `description`,
+     * nothing more: unlike an operation, a component's `tree()` entry
+     * carries no PHPDoc `@link` tags to turn into `externalDocs` (those
+     * exist only per-method, via `Inspector::getPublicMethods()`, not
+     * per-class).
      *
-     * @param ComponentInterface $component
+     * @param array $componentTree
      * @return array
      */
-    private function getTagDocumentation(ComponentInterface $component): array
+    private function getTagDocumentation(array $componentTree): array
     {
-        $classDoc = $this->inspector->getClassDoc($component);
-
-        $doc = [
-            'name' => $classDoc['summary'],
-            'description' => $classDoc['description'],
+        return [
+            'name' => $componentTree['summary'],
+            'description' => $componentTree['description'],
         ];
-
-        if (!empty($classDoc['links'])) {
-            $doc['externalDocs'] = [];
-            foreach ($classDoc['links'] as $link) {
-                $doc['externalDocs'][] = [
-                    'url' => $link['url'],
-                ];
-            }
-        }
-
-        return $doc;
     }
 
     /**

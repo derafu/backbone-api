@@ -179,6 +179,25 @@ class Explorer
     }
 
     /**
+     * Returns the fully nested tree of every package, component, worker and
+     * operation currently visible.
+     *
+     * No `_links` added here, unlike every other method above: nothing
+     * renders this shape as an HTTP resource today (`Documenter` is the
+     * only caller, and it only needs the plain nested data to know what a
+     * real dispatch would actually allow) — `_links` on every nested node
+     * would mean recursing `withLinks()` through arbitrary depth for a
+     * consumer that would just ignore it.
+     *
+     * @param string|null $id
+     * @return array
+     */
+    public function tree(?string $id = null): array
+    {
+        return $this->explorer->tree($id);
+    }
+
+    /**
      * Returns the URL of the API.
      *
      * @return string
