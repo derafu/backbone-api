@@ -153,4 +153,110 @@ class DocumenterTest extends TestCase
         $this->assertSame([], $docs['paths']);
         $this->assertSame([], $docs['tags']);
     }
+
+    /**
+     * `ExampleWorker::create()` is deliberately documented with a `@return`
+     * description, two `@throws`, and two `@link` tags — everything
+     * `Inspector` now reports as `returns`/`throws`/`links`.
+     */
+    public function testDocumentsTheReturnsDescriptionOnTheSuccessResponse(): void
+    {
+        $docs = $this->documenterWithPolicy()->document();
+        $post = $docs['paths']['/example_package/example_component/example_worker/create']['post'];
+
+        $this->assertSame(
+            'The created resource, with its assigned `name`.',
+            $post['responses'][200]['description'],
+        );
+    }
+
+    public function testDocumentsBothThrowsMergedOnTheStatusTheyResolveTo(): void
+    {
+        $docs = $this->documenterWithPolicy()->document();
+        $post = $docs['paths']['/example_package/example_component/example_worker/create']['post'];
+
+        // Neither InvalidArgumentException nor RuntimeException is one of
+        // the dispatcher's own generic exceptions, so HttpStatusResolver
+        // maps both to 500 — their descriptions are joined, not one
+        // silently overwriting the other.
+        $this->assertArrayHasKey(500, $post['responses']);
+        $this->assertStringContainsString(
+            'If `$name` is empty.',
+            $post['responses'][500]['description'],
+        );
+        $this->assertStringContainsString(
+            'If the resource could not be persisted.',
+            $post['responses'][500]['description'],
+        );
+
+        // 422 still gets the generic baseline text — nothing declared on
+        // this operation resolves to it.
+        $this->assertSame(
+            'Error: One or more parameters failed validation.',
+            $post['responses'][422]['description'],
+        );
+    }
+
+    /**
+     * `cancel()` has no docblock at all (no `@return`/`@throws`), so every
+     * response should still fall back to the generic baseline text — the
+     * behavior for an operation that documents nothing must stay exactly
+     * as it was before `returns`/`throws` were taken into account.
+     */
+    public function testFallsBackToTheGenericResponsesWhenNothingIsDocumented(): void
+    {
+        $docs = $this->documenterWithPolicy()->document();
+        $post = $docs['paths']['/example_package/example_component/example_worker/cancel']['post'];
+
+        $this->assertSame(
+            [
+                200 => ['description' => 'Success: The request was successful.'],
+                422 => ['description' => 'Error: One or more parameters failed validation.'],
+                500 => ['description' => 'Failed: The request failed to be processed (error in the server).'],
+            ],
+            $post['responses'],
+        );
+    }
+
+    /**
+     * `getStatus()` is documented with exactly one `@link`: it should use
+     * `externalDocs`, same as before this fix — nothing appended to
+     * `description`.
+     */
+    public function testUsesExternalDocsWhenThereIsExactlyOneLink(): void
+    {
+        $docs = $this->documenterWithPolicy()->document();
+        $post = $docs['paths']['/example_package/example_component/example_worker/getStatus']['post'];
+
+        $this->assertSame(
+            [
+                'url' => 'https://example.test/docs/get-status',
+                'description' => 'Reference for this operation.',
+            ],
+            $post['externalDocs'],
+        );
+        $this->assertStringNotContainsString('Links:', $post['description']);
+    }
+
+    /**
+     * `create()` is documented with two `@link` tags: OpenAPI's
+     * `externalDocs` only ever holds one reference (true of every version
+     * of the spec, 2.0 through 3.2.0), so with more than one link,
+     * `externalDocs` is skipped entirely and every link is appended to
+     * `description` instead — never both places at once, so the first
+     * link is never documented twice.
+     */
+    public function testAppendsAllLinksToTheDescriptionWhenThereIsMoreThanOne(): void
+    {
+        $docs = $this->documenterWithPolicy()->document();
+        $post = $docs['paths']['/example_package/example_component/example_worker/create']['post'];
+
+        $this->assertArrayNotHasKey('externalDocs', $post);
+        $this->assertStringEndsWith(
+            "Links:\n" .
+            "- Primary reference for this operation.: https://example.test/docs/create\n" .
+            '- Schema reference for the created resource.: https://example.test/docs/create-schema',
+            $post['description'],
+        );
+    }
 }

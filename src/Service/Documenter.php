@@ -176,39 +176,111 @@ class Documenter
                     ],
                 ],
             ],
-            'responses' => [],
+            'responses' => $this->getResponsesDocumentation($operationInfo),
         ];
 
-        if (!empty($operationInfo['links'])) {
+        $links = $operationInfo['links'] ?? [];
+
+        if (count($links) === 1) {
             $post['externalDocs'] = [
-                'url' => $operationInfo['links'][0]['url'],
-                'description' => $operationInfo['links'][0]['description'],
+                'url' => $links[0]['url'],
+                'description' => $links[0]['description'],
             ];
-        }
-
-        foreach ($operationInfo['operation']['results'] ?? [] as $scenario => $result) {
-            $post['responses'][$this->httpStatusResolver->resolve($scenario)] = [
-                'description' => $result['description'] ?? '',
-            ];
-        }
-
-        if (empty($post['responses'])) {
-            $post['responses'] = [
-                200 => [
-                    'description' => 'Success: The request was successful.',
-                ],
-                422 => [
-                    'description' => 'Error: One or more parameters failed validation.',
-                ],
-                500 => [
-                    'description' => 'Failed: The request failed to be processed (error in the server).',
-                ],
-            ];
+        } elseif (count($links) > 1) {
+            $post['description'] = $this->appendLinksList($post['description'], $links);
         }
 
         return [
             'post' => $post,
         ];
+    }
+
+    /**
+     * Appends every link as a bullet list at the end of `$description`,
+     * prefixed with "Links: " and nothing else.
+     *
+     * Only used when an operation has more than one `@link`: OpenAPI's
+     * `externalDocs` (unchanged from 2.0 through the latest 3.2.0) only
+     * ever holds a single reference, so with more than one link neither
+     * fits there without silently dropping the rest. A single link keeps
+     * using `externalDocs` instead (see caller) — never both places at
+     * once, so the same link is never documented twice.
+     *
+     * @param string $description
+     * @param array $links
+     * @return string
+     */
+    private function appendLinksList(string $description, array $links): string
+    {
+        $list = implode("\n", array_map(
+            fn (array $link) => '- ' . (
+                !empty($link['description'])
+                    ? sprintf('%s: %s', $link['description'], $link['url'])
+                    : $link['url']
+            ),
+            $links
+        ));
+
+        return rtrim($description) . "\n\nLinks:\n" . $list;
+    }
+
+    /**
+     * Generates the `responses` object of an operation.
+     *
+     * Layers three sources, most to least specific: an explicit
+     * `#[Operation(results: ...)]` entry for a status always wins; a
+     * status not covered by it but reachable from a declared `@throws`
+     * (resolved to a status via `HttpStatusResolver`, same resolver
+     * `AbstractController` uses for a real failed dispatch) is documented
+     * from that instead; anything still uncovered falls back to the
+     * generic baseline text this class always documented. When more than
+     * one declared exception resolves to the same status (e.g. two
+     * business exceptions both falling to the `default => 500` case),
+     * their descriptions are joined instead of the last one silently
+     * winning.
+     *
+     * @param array $operationInfo
+     * @return array
+     */
+    private function getResponsesDocumentation(array $operationInfo): array
+    {
+        $descriptionsByStatus = [];
+
+        foreach ($operationInfo['operation']['results'] ?? [] as $scenario => $result) {
+            if (!empty($result['description'])) {
+                $status = $this->httpStatusResolver->resolve($scenario);
+                $descriptionsByStatus[$status][] = $result['description'];
+            }
+        }
+
+        foreach ($operationInfo['throws'] ?? [] as $throw) {
+            if (!empty($throw['description'])) {
+                $status = $this->httpStatusResolver->resolve($throw['type']);
+                $descriptionsByStatus[$status][] = $throw['description'];
+            }
+        }
+
+        $responses = [];
+        foreach ($descriptionsByStatus as $status => $descriptions) {
+            $responses[$status] = [
+                'description' => implode(' ', $descriptions),
+            ];
+        }
+
+        $defaults = [
+            200 => $operationInfo['returns']['description']
+                ?? 'Success: The request was successful.',
+            422 => 'Error: One or more parameters failed validation.',
+            500 => 'Failed: The request failed to be processed (error in the server).',
+        ];
+
+        foreach ($defaults as $status => $description) {
+            if (!isset($responses[$status])) {
+                $responses[$status] = ['description' => $description];
+            }
+        }
+
+        return $responses;
     }
 
     /**
