@@ -219,6 +219,34 @@ class DocumenterTest extends TestCase
     }
 
     /**
+     * `archive()` documents its `success` outcome entirely via
+     * `#[Operation(results: ...)]` (`description` and `example`), with no
+     * PHPDoc `@return` at all — confirming a response example only ever
+     * comes from the attribute, the same way a parameter's `example`
+     * does, and that it lands where OpenAPI expects one: the `200`
+     * response's `content.application/json.example`, symmetric with how
+     * `requestBody.content.application/json.example` already works for
+     * the parameters side.
+     */
+    public function testDocumentsTheResponseExampleFromOperationResults(): void
+    {
+        $docs = $this->documenterWithPolicy()->document();
+        $post = $docs['paths']['/example_package/example_component/example_worker/archive']['post'];
+
+        $this->assertSame('The archived resource.', $post['responses'][200]['description']);
+        $this->assertSame(
+            ['name' => 'archived-widget', 'archived' => true],
+            $post['responses'][200]['content']['application/json']['example'],
+        );
+
+        // 422/500 are untouched by the results override — still the
+        // generic baseline text, with no `content` at all (no example was
+        // ever given for those).
+        $this->assertArrayNotHasKey('content', $post['responses'][422]);
+        $this->assertArrayNotHasKey('content', $post['responses'][500]);
+    }
+
+    /**
      * `getStatus()` is documented with exactly one `@link`: it should use
      * `externalDocs`, same as before this fix — nothing appended to
      * `description`.
@@ -254,8 +282,9 @@ class DocumenterTest extends TestCase
         $this->assertArrayNotHasKey('externalDocs', $post);
         $this->assertStringEndsWith(
             "Links:\n" .
-            "- Primary reference for this operation.: https://example.test/docs/create\n" .
-            '- Schema reference for the created resource.: https://example.test/docs/create-schema',
+            "- [Primary reference for this operation.](https://example.test/docs/create)\n" .
+            "- [Schema reference for the created resource.](https://example.test/docs/create-schema)\n" .
+            '- <https://example.test/docs/create-no-description>',
             $post['description'],
         );
     }

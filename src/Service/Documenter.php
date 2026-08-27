@@ -199,6 +199,13 @@ class Documenter
      * Appends every link as a bullet list at the end of `$description`,
      * prefixed with "Links: " and nothing else.
      *
+     * Each entry uses real CommonMark link syntax (`[text](url)`, or a
+     * bare `<url>` autolink when there's no description) — both are core
+     * CommonMark, not a GFM-only extension, and OpenAPI's `description`
+     * field explicitly allows CommonMark — so the link renders as
+     * clickable in any spec-compliant renderer (Swagger UI, ReDoc, etc.),
+     * not just ones that happen to autolink plain text.
+     *
      * Only used when an operation has more than one `@link`: OpenAPI's
      * `externalDocs` (unchanged from 2.0 through the latest 3.2.0) only
      * ever holds a single reference, so with more than one link neither
@@ -215,8 +222,8 @@ class Documenter
         $list = implode("\n", array_map(
             fn (array $link) => '- ' . (
                 !empty($link['description'])
-                    ? sprintf('%s: %s', $link['description'], $link['url'])
-                    : $link['url']
+                    ? sprintf('[%s](%s)', $link['description'], $link['url'])
+                    : sprintf('<%s>', $link['url'])
             ),
             $links
         ));
@@ -228,51 +235,72 @@ class Documenter
      * Generates the `responses` object of an operation.
      *
      * Layers three sources, most to least specific: an explicit
-     * `#[Operation(results: ...)]` entry for a status always wins; a
-     * status not covered by it but reachable from a declared `@throws`
-     * (resolved to a status via `HttpStatusResolver`, same resolver
-     * `AbstractController` uses for a real failed dispatch) is documented
-     * from that instead; anything still uncovered falls back to the
-     * generic baseline text this class always documented. When more than
-     * one declared exception resolves to the same status (e.g. two
-     * business exceptions both falling to the `default => 500` case),
-     * their descriptions are joined instead of the last one silently
-     * winning.
+     * `#[Operation(results: ...)]` entry for a status always wins (its
+     * `description` and, when given, its `example` — the only source of a
+     * response example, since neither reflection nor a docblock can
+     * produce a realistic one, exactly why `parameters[x].example` is
+     * also attribute-only); a status not covered by it but reachable from
+     * a declared `@throws` (resolved to a status via `HttpStatusResolver`,
+     * same resolver `AbstractController` uses for a real failed dispatch)
+     * is documented from that instead; anything still uncovered falls
+     * back to the generic baseline text this class always documented.
+     * When more than one declared exception resolves to the same status
+     * (e.g. two business exceptions both falling to the `default => 500`
+     * case), their descriptions are joined instead of the last one
+     * silently winning.
      *
      * @param array $operationInfo
      * @return array
      */
     private function getResponsesDocumentation(array $operationInfo): array
     {
-        $descriptionsByStatus = [];
-
-        foreach ($operationInfo['operation']['results'] ?? [] as $scenario => $result) {
-            if (!empty($result['description'])) {
-                $status = $this->httpStatusResolver->resolve($scenario);
-                $descriptionsByStatus[$status][] = $result['description'];
-            }
-        }
-
-        foreach ($operationInfo['throws'] ?? [] as $throw) {
-            if (!empty($throw['description'])) {
-                $status = $this->httpStatusResolver->resolve($throw['type']);
-                $descriptionsByStatus[$status][] = $throw['description'];
-            }
-        }
-
-        $responses = [];
-        foreach ($descriptionsByStatus as $status => $descriptions) {
-            $responses[$status] = [
-                'description' => implode(' ', $descriptions),
-            ];
-        }
-
         $defaults = [
             200 => $operationInfo['returns']['description']
                 ?? 'Success: The request was successful.',
             422 => 'Error: One or more parameters failed validation.',
             500 => 'Failed: The request failed to be processed (error in the server).',
         ];
+
+        $dataByStatus = [];
+
+        foreach ($operationInfo['operation']['results'] ?? [] as $scenario => $result) {
+            $status = $this->httpStatusResolver->resolve($scenario);
+
+            if (!empty($result['description'])) {
+                $dataByStatus[$status]['descriptions'][] = $result['description'];
+            }
+
+            if (array_key_exists('example', $result)) {
+                $dataByStatus[$status]['example'] = $result['example'];
+            }
+        }
+
+        foreach ($operationInfo['throws'] ?? [] as $throw) {
+            if (!empty($throw['description'])) {
+                $status = $this->httpStatusResolver->resolve($throw['type']);
+                $dataByStatus[$status]['descriptions'][] = $throw['description'];
+            }
+        }
+
+        $responses = [];
+        foreach ($dataByStatus as $status => $data) {
+            $descriptions = $data['descriptions'] ?? [];
+            $response = [
+                'description' => $descriptions !== []
+                    ? implode(' ', $descriptions)
+                    : ($defaults[$status] ?? ''),
+            ];
+
+            if (array_key_exists('example', $data)) {
+                $response['content'] = [
+                    'application/json' => [
+                        'example' => $data['example'],
+                    ],
+                ];
+            }
+
+            $responses[$status] = $response;
+        }
 
         foreach ($defaults as $status => $description) {
             if (!isset($responses[$status])) {

@@ -21,13 +21,14 @@ use InvalidArgumentException;
 use RuntimeException;
 
 /**
- * A real worker with two tagged operations and one untagged public method,
- * used to verify `Documenter` follows whatever `Explorer`/`ExplorerInterface`
- * says is visible — including an untagged method under a permissive policy
- * (the real gap this fixture exists to reproduce: `getStatus()` was never
- * marked `#[Operation]`, yet a real `DirectDispatcher` with no restrictive
- * policy would dispatch it just the same) — never its own, separate opinion
- * based on the `#[Operation]` tag alone.
+ * A real worker with three tagged operations and one untagged public
+ * method, used to verify `Documenter` follows whatever `Explorer`/
+ * `ExplorerInterface` says is visible — including an untagged method
+ * under a permissive policy (the real gap this fixture exists to
+ * reproduce: `getStatus()` was never marked `#[Operation]`, yet a real
+ * `DirectDispatcher` with no restrictive policy would dispatch it just
+ * the same) — never its own, separate opinion based on the
+ * `#[Operation]` tag alone.
  */
 class ExampleWorker implements WorkerInterface
 {
@@ -59,9 +60,11 @@ class ExampleWorker implements WorkerInterface
      * Creates a new example resource.
      *
      * Deliberately documented with everything `Inspector` now reports
-     * (`returns`, multiple `throws`, multiple `link`) so `DocumenterTest`
-     * can verify `Documenter` actually surfaces all of it in the generated
-     * OpenAPI document, not just the fields it already covered before.
+     * (`returns`, multiple `throws`, multiple `link` — including one with
+     * no description, to prove that one still renders as a clickable bare
+     * autolink) so `DocumenterTest` can verify `Documenter` actually
+     * surfaces all of it in the generated OpenAPI document, not just the
+     * fields it already covered before.
      *
      * @param string $name Name of the resource to create.
      * @return array The created resource, with its assigned `name`.
@@ -69,6 +72,7 @@ class ExampleWorker implements WorkerInterface
      * @throws RuntimeException If the resource could not be persisted.
      * @link https://example.test/docs/create Primary reference for this operation.
      * @link https://example.test/docs/create-schema Schema reference for the created resource.
+     * @link https://example.test/docs/create-no-description
      */
     #[Operation]
     public function create(string $name): array
@@ -80,6 +84,28 @@ class ExampleWorker implements WorkerInterface
     public function cancel(string $name): array
     {
         return ['name' => $name];
+    }
+
+    /**
+     * Archives an example resource.
+     *
+     * No docblock `@return` on purpose: the `success` response's
+     * description and example come entirely from the `#[Operation(
+     * results: ...)]` override below, not from PHPDoc — proving `example`
+     * is attribute-only, exactly like `parameters[x]['example']` already
+     * is (reflection/PHPDoc alone can never produce a realistic one).
+     */
+    #[Operation(
+        results: [
+            'success' => [
+                'description' => 'The archived resource.',
+                'example' => ['name' => 'archived-widget', 'archived' => true],
+            ],
+        ],
+    )]
+    public function archive(string $name): array
+    {
+        return ['name' => $name, 'archived' => true];
     }
 
     /**
