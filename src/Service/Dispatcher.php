@@ -14,9 +14,12 @@ namespace Derafu\BackboneApi\Service;
 
 use Derafu\BackboneApi\Contract\DispatcherInterface;
 use Derafu\BackboneApi\Contract\RouterInterface;
+use Derafu\BackboneApi\Exception\InvalidRequestBodyException;
 use Derafu\BackboneDispatcher\Contract\OperationResultInterface;
 use Derafu\BackboneDispatcher\Contract\SafeDispatcherInterface;
 use Derafu\BackboneDispatcher\ValueObject\OperationRequest;
+use Derafu\Translation\Exception\Core\TranslatableLogicException as LogicException;
+use JsonException;
 use Psr\Http\Message\ServerRequestInterface;
 
 /**
@@ -73,25 +76,32 @@ class Dispatcher implements DispatcherInterface
             return $this->documenter->document();
         }
 
+        $package = $route->getPackage();
+        if ($package === null) {
+            throw new LogicException(
+                'A non-root API route must specify a package.'
+            );
+        }
+
         if ($route->getComponent() === null) {
             return $this->handlePackage(
-                $route->getPackage()
+                $package
             );
         } elseif ($route->getWorker() === null) {
             return $this->handleComponent(
-                $route->getPackage(),
+                $package,
                 $route->getComponent()
             );
         } elseif ($route->getOperation() === null) {
             return $this->handleWorker(
-                $route->getPackage(),
+                $package,
                 $route->getComponent(),
                 $route->getWorker()
             );
         } else {
             return $this->handleOperation(
                 $request,
-                $route->getPackage(),
+                $package,
                 $route->getComponent(),
                 $route->getWorker(),
                 $route->getOperation()
@@ -102,7 +112,7 @@ class Dispatcher implements DispatcherInterface
     /**
      * Handles the root page of the API.
      *
-     * @return array
+     * @return array<string, mixed>
      */
     public function handleRoot(): array
     {
@@ -120,7 +130,7 @@ class Dispatcher implements DispatcherInterface
      * Handles the URL of a package in the API.
      *
      * @param string $package
-     * @return array
+     * @return array<string, mixed>
      */
     public function handlePackage(string $package): array
     {
@@ -132,7 +142,7 @@ class Dispatcher implements DispatcherInterface
      *
      * @param string $package
      * @param string $component
-     * @return array
+     * @return array<string, mixed>
      */
     public function handleComponent(string $package, string $component): array
     {
@@ -149,7 +159,7 @@ class Dispatcher implements DispatcherInterface
      * @param string $package
      * @param string $component
      * @param string $worker
-     * @return array
+     * @return array<string, mixed>
      */
     public function handleWorker(
         string $package,
@@ -181,8 +191,42 @@ class Dispatcher implements DispatcherInterface
         string $worker,
         string $operation
     ): OperationResultInterface {
-        $requestContent = json_decode($request->getBody()->getContents(), true);
-        $params = $requestContent['parameters'] ?? [];
+        $body = $request->getBody()->getContents();
+        $params = [];
+        if ($body !== '') {
+            try {
+                $requestContent = json_decode($body, true, flags: JSON_THROW_ON_ERROR);
+            } catch (JsonException $exception) {
+                throw new InvalidRequestBodyException(
+                    'The API request body must contain valid JSON.',
+                    previous: $exception,
+                );
+            }
+
+            // Associative decoding preserves nested arrays, but maps both JSON
+            // objects and arrays to PHP arrays. Check the root token as well.
+            if (!is_array($requestContent) || !str_starts_with(ltrim($body), '{')) {
+                throw new InvalidRequestBodyException(
+                    'The API request body must be a JSON object.'
+                );
+            }
+
+            $rawParameters = $requestContent['parameters'] ?? [];
+            if (!is_array($rawParameters)) {
+                throw new InvalidRequestBodyException(
+                    'API request parameters must be an object with named parameters or an empty array.'
+                );
+            }
+
+            foreach ($rawParameters as $name => $value) {
+                if (!is_string($name)) {
+                    throw new InvalidRequestBodyException(
+                        'API request parameters must be an object with named parameters or an empty array.'
+                    );
+                }
+                $params[$name] = $value;
+            }
+        }
 
         $operationRequest = new OperationRequest($package, $component, $worker, $operation, $params);
 

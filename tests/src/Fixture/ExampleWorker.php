@@ -67,7 +67,7 @@ class ExampleWorker implements WorkerInterface
      * fields it already covered before.
      *
      * @param string $name Name of the resource to create.
-     * @return array The created resource, with its assigned `name`.
+     * @return array{name: string} The created resource, with its assigned `name`.
      * @throws InvalidArgumentException If `$name` is empty.
      * @throws RuntimeException If the resource could not be persisted.
      * @link https://example.test/docs/create Primary reference for this operation.
@@ -80,6 +80,7 @@ class ExampleWorker implements WorkerInterface
         return ['name' => $name];
     }
 
+    /** @return array{name: string} */
     #[Operation]
     public function cancel(string $name): array
     {
@@ -89,11 +90,13 @@ class ExampleWorker implements WorkerInterface
     /**
      * Archives an example resource.
      *
-     * No docblock `@return` on purpose: the `success` response's
+     * No PHPDoc return description on purpose: the `success` response's
      * description and example come entirely from the `#[Operation(
      * results: ...)]` override below, not from PHPDoc — proving `example`
      * is attribute-only, exactly like `parameters[x]['example']` already
      * is (reflection/PHPDoc alone can never produce a realistic one).
+     *
+     * @return array{name: string, archived: bool}
      */
     #[Operation(
         results: [
@@ -116,7 +119,7 @@ class ExampleWorker implements WorkerInterface
      * `externalDocs`, instead of also being appended to `description`.
      *
      * @param string $name Name of the resource to check.
-     * @return array The resource's current status.
+     * @return array{name: string, status: string} The resource's current status.
      * @link https://example.test/docs/get-status Reference for this operation.
      */
     public function getStatus(string $name): array

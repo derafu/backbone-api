@@ -13,6 +13,7 @@ declare(strict_types=1);
 namespace Derafu\TestsBackboneApi;
 
 use Derafu\BackboneApi\Service\Explorer;
+use Derafu\BackboneApi\Translation\BackboneApiTranslationResourceProvider;
 use Derafu\BackboneDispatcher\Service\Discovery\Explorer as DispatcherExplorer;
 use Derafu\BackboneDispatcher\Service\Policy\AllowListOperationPolicy;
 use Derafu\BackboneDispatcher\Service\Reflection\Inspector;
@@ -20,7 +21,12 @@ use Derafu\TestsBackboneApi\Fixture\ExampleComponent;
 use Derafu\TestsBackboneApi\Fixture\ExamplePackage;
 use Derafu\TestsBackboneApi\Fixture\ExamplePackageRegistry;
 use Derafu\TestsBackboneApi\Fixture\ExampleWorker;
+use Derafu\Translation\Exception\Logic\TranslatableInvalidArgumentException as InvalidArgumentException;
+use Derafu\Translation\TranslatorFactory;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\TestWith;
+use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBag;
 
@@ -33,6 +39,7 @@ use Symfony\Component\DependencyInjection\ParameterBag\ParameterBag;
  * policy-aware pruning (previously nonexistent).
  */
 #[CoversClass(Explorer::class)]
+#[UsesClass(BackboneApiTranslationResourceProvider::class)]
 class ExplorerTest extends TestCase
 {
     private ExamplePackageRegistry $registry;
@@ -122,5 +129,92 @@ class ExplorerTest extends TestCase
         );
 
         $this->assertSame([], $explorer->getPackages());
+    }
+
+    /** @return array<string, array{mixed}> */
+    public static function invalidAppUrls(): array
+    {
+        return [
+            'null' => [null],
+            'integer' => [123],
+            'float' => [12.5],
+            'boolean' => [false],
+            'array' => [['url' => 'https://example.test']],
+        ];
+    }
+
+    #[DataProvider('invalidAppUrls')]
+    public function testAppUrlRejectsNonStringConfigurationWithATranslatedException(mixed $url): void
+    {
+        $explorer = new Explorer(
+            new DispatcherExplorer($this->registry, $this->inspector),
+            new ParameterBag(['env.APP_URL' => $url])
+        );
+
+        try {
+            $explorer->getUrl();
+            $this->fail('A non-string APP_URL must be rejected.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('The env.APP_URL parameter must be a string.', $exception->getMessage());
+            $translator = TranslatorFactory::create('es', resourceProviders: [new BackboneApiTranslationResourceProvider()]);
+            $this->assertSame('El parámetro env.APP_URL debe ser un string.', $exception->trans($translator));
+        }
+    }
+
+    #[TestWith(['https://example.test', 'https://example.test/api'])]
+    #[TestWith(['https://example.test/', 'https://example.test//api'])]
+    #[TestWith(['', '/api'])]
+    public function testValidStringAppUrlsKeepTheirExistingConcatenation(string $url, string $expected): void
+    {
+        $explorer = new Explorer(
+            new DispatcherExplorer($this->registry, $this->inspector),
+            new ParameterBag(['env.APP_URL' => $url])
+        );
+
+        $this->assertSame($expected, $explorer->getUrl());
+    }
+
+    public function testConfiguredBaseUrlIsUsedThroughoutExpandedResourceLinks(): void
+    {
+        $explorer = $this->createExplorer();
+        $packages = $explorer->getPackages();
+        $package = $explorer->getPackage('example_package', withComponents: true);
+        $component = $explorer->getComponent('example_package', 'example_component', withWorkers: true);
+
+        $this->assertSame('https://example.test/api', $packages[0]['_links']['parent']['href']);
+        $this->assertSame('https://example.test/api/example_package', $package['_links']['self']['href']);
+        $this->assertSame('https://example.test/api/example_package/example_component', $package['components'][0]['_links']['self']['href']);
+        $this->assertSame('https://example.test/api/example_package/example_component/example_worker', $component['workers'][0]['_links']['self']['href']);
+        $this->assertArrayNotHasKey('components', $explorer->getPackage('example_package'));
+        $this->assertArrayNotHasKey('workers', $explorer->getComponent('example_package', 'example_component'));
+    }
+
+    public function testAnEmptyPackageNameUsesTheBaseUrlForBothLinks(): void
+    {
+        $this->registry->registerPackage('', new ExamplePackage([]));
+
+        $package = $this->createExplorer()->getPackage('');
+
+        $this->assertSame('', $package['id']);
+        $this->assertSame('Example Package', $package['name']);
+        $this->assertSame([
+            'self' => ['href' => 'https://example.test/api'],
+            'parent' => ['href' => 'https://example.test/api'],
+        ], $package['_links']);
+    }
+
+    #[TestWith([null])]
+    #[TestWith([''])]
+    #[TestWith(['example_package'])]
+    #[TestWith(['example_package.example_component'])]
+    #[TestWith(['example_package.example_component.example_worker'])]
+    #[TestWith(['example_package.example_component.example_worker::create'])]
+    public function testDocumentationTreeDelegatesWithoutAddingHttpLinks(?string $id): void
+    {
+        $explorer = $this->createExplorer();
+        $delegate = new DispatcherExplorer($this->registry, $this->inspector);
+
+        $this->assertSame($delegate->tree($id), $explorer->tree($id));
+        $this->assertArrayNotHasKey('_links', $explorer->tree($id));
     }
 }

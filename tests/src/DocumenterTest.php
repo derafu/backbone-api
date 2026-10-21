@@ -221,7 +221,7 @@ class DocumenterTest extends TestCase
     /**
      * `archive()` documents its `success` outcome entirely via
      * `#[Operation(results: ...)]` (`description` and `example`), with no
-     * PHPDoc `@return` at all — confirming a response example only ever
+     * PHPDoc return description — confirming a response example only ever
      * comes from the attribute, the same way a parameter's `example`
      * does, and that it lands where OpenAPI expects one: the `200`
      * response's `content.application/json.example`, symmetric with how
@@ -230,13 +230,16 @@ class DocumenterTest extends TestCase
      */
     public function testDocumentsTheResponseExampleFromOperationResults(): void
     {
+        $methods = $this->inspector->getPublicMethods(new ExampleWorker());
+        $this->assertNull($methods['archive']['returns']['description']);
+
         $docs = $this->documenterWithPolicy()->document();
         $post = $docs['paths']['/example_package/example_component/example_worker/archive']['post'];
 
         $this->assertSame('The archived resource.', $post['responses'][200]['description']);
         $this->assertSame(
             ['name' => 'archived-widget', 'archived' => true],
-            $post['responses'][200]['content']['application/json']['example'],
+            $post['responses'][200]['content']['application/json']['example'] ?? null,
         );
 
         // 422/500 are untouched by the results override — still the
@@ -261,7 +264,7 @@ class DocumenterTest extends TestCase
                 'url' => 'https://example.test/docs/get-status',
                 'description' => 'Reference for this operation.',
             ],
-            $post['externalDocs'],
+            $post['externalDocs'] ?? null,
         );
         $this->assertStringNotContainsString('Links:', $post['description']);
     }

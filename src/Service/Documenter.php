@@ -13,6 +13,7 @@ declare(strict_types=1);
 namespace Derafu\BackboneApi\Service;
 
 use Derafu\BackboneDispatcher\Service\Resolution\Caster;
+use Derafu\Translation\Exception\Logic\TranslatableInvalidArgumentException as InvalidArgumentException;
 
 // use Opis\JsonSchema\Errors\ErrorFormatter as JsonErrorFormatter;
 // use Opis\JsonSchema\Validator as JsonValidator;
@@ -53,7 +54,44 @@ class Documenter
     /**
      * Method that generates the documentation.
      *
-     * @return array
+     * @return array{
+     *     openapi: string,
+     *     info: array{version: string, title: string, description: string},
+     *     servers: list<array{url: string}>,
+     *     paths: array<string, array{
+     *         post: array{
+     *             tags: list<string|null>,
+     *             summary: string|null,
+     *             description: string,
+     *             operationId: string,
+     *             deprecated: bool,
+     *             requestBody: array{
+     *                 description: null,
+     *                 required: bool,
+     *                 content: array{
+     *                     'application/json': array{
+     *                         schema: array{
+     *                             type: string,
+     *                             properties: array{
+     *                                 parameters: array{
+     *                                     type: string,
+     *                                     description: string,
+     *                                     properties: array<string, array{type: string|array<string>, description: string, default: mixed}>,
+     *                                     required: list<string>,
+     *                                     example: array<string, mixed>|null,
+     *                                 },
+     *                             },
+     *                             required: list<string>,
+     *                         },
+     *                     },
+     *                 },
+     *             },
+     *             responses: array<int, array{description: string, content?: array{'application/json': array{example: mixed}}}>,
+     *             externalDocs?: array{url: string, description: string|null},
+     *         },
+     *     }>,
+     *     tags: list<array{name: string|null, description: string|null}>,
+     * }
      */
     public function document(): array
     {
@@ -126,8 +164,62 @@ class Documenter
     /**
      * Generates the documentation of a particular operation.
      *
-     * @param array $operationInfo
-     * @return array
+     * @param array{
+     *     parameters: list<array{
+     *         name: string,
+     *         type: string,
+     *         required: bool,
+     *         default: mixed,
+     *         description: string|null,
+     *         example?: mixed,
+     *     }>,
+     *     summary: string|null,
+     *     description: string|null,
+     *     resourceTags: list<string|null>,
+     *     operationId: string,
+     *     deprecated?: bool,
+     *     links?: list<array{url: string, description: string|null}>,
+     *     returns: array{type: string, description: string|null},
+     *     throws?: array<array{type: string, description: string|null}>,
+     *     operation?: array{
+     *         name: string|null,
+     *         description: string|null,
+     *         parameters: array<array-key, mixed>,
+     *         results: array<array-key, mixed>,
+     *     }|null,
+     * } $operationInfo
+     * @return array{
+     *     post: array{
+     *         tags: list<string|null>,
+     *         summary: string|null,
+     *         description: string,
+     *         operationId: string,
+     *         deprecated: bool,
+     *         requestBody: array{
+     *             description: null,
+     *             required: bool,
+     *             content: array{
+     *                 'application/json': array{
+     *                     schema: array{
+     *                         type: string,
+     *                         properties: array{
+     *                             parameters: array{
+     *                                 type: string,
+     *                                 description: string,
+     *                                 properties: array<string, array{type: string|array<string>, description: string, default: mixed}>,
+     *                                 required: list<string>,
+     *                                 example: array<string, mixed>|null,
+     *                             },
+     *                         },
+     *                         required: list<string>,
+     *                     },
+     *                 },
+     *             },
+     *         },
+     *         responses: array<int, array{description: string, content?: array{'application/json': array{example: mixed}}}>,
+     *         externalDocs?: array{url: string, description: string|null},
+     *     },
+     * }
      */
     private function getOperationDocumentation(array $operationInfo): array
     {
@@ -214,7 +306,7 @@ class Documenter
      * once, so the same link is never documented twice.
      *
      * @param string $description
-     * @param array $links
+     * @param list<array{url: string, description: string|null}> $links
      * @return string
      */
     private function appendLinksList(string $description, array $links): string
@@ -249,8 +341,17 @@ class Documenter
      * case), their descriptions are joined instead of the last one
      * silently winning.
      *
-     * @param array $operationInfo
-     * @return array
+     * @param array{
+     *     returns: array{type: string, description: string|null},
+     *     throws?: array<array{type: string, description: string|null}>,
+     *     operation?: array{
+     *         name: string|null,
+     *         description: string|null,
+     *         parameters: array<array-key, mixed>,
+     *         results: array<array-key, mixed>,
+     *     }|null,
+     * } $operationInfo
+     * @return array<int, array{description: string, content?: array{'application/json': array{example: mixed}}}>
      */
     private function getResponsesDocumentation(array $operationInfo): array
     {
@@ -265,6 +366,25 @@ class Documenter
 
         foreach ($operationInfo['operation']['results'] ?? [] as $scenario => $result) {
             $status = $this->httpStatusResolver->resolve($scenario);
+
+            if (!is_array($result)) {
+                throw new InvalidArgumentException([
+                    'Operation result {scenario} must be an array; {type} given.',
+                    'scenario' => $scenario,
+                    'type' => get_debug_type($result),
+                ]);
+            }
+
+            if (array_key_exists('description', $result)
+                && $result['description'] !== null
+                && !is_string($result['description'])
+            ) {
+                throw new InvalidArgumentException([
+                    'The description of operation result {scenario} must be string|null; {type} given.',
+                    'scenario' => $scenario,
+                    'type' => get_debug_type($result['description']),
+                ]);
+            }
 
             if (!empty($result['description'])) {
                 $dataByStatus[$status]['descriptions'][] = $result['description'];
@@ -320,8 +440,8 @@ class Documenter
      * exist only per-method, via `Inspector::getPublicMethods()`, not
      * per-class).
      *
-     * @param array $componentTree
-     * @return array
+     * @param array{summary: string|null, description: string|null} $componentTree
+     * @return array{name: string|null, description: string|null}
      */
     private function getTagDocumentation(array $componentTree): array
     {
@@ -337,8 +457,8 @@ class Documenter
      * ...)]` provided — `Inspector` already merges those onto the
      * reflected parameter list, so this only needs to collect them.
      *
-     * @param array $parameters
-     * @return array|null
+     * @param list<array{name: string, example?: mixed}> $parameters
+     * @return array<string, mixed>|null
      */
     private function getParametersExample(array $parameters): ?array
     {
@@ -356,8 +476,8 @@ class Documenter
     /**
      * Generates the list of properties of an API resource.
      *
-     * @param array $parameters
-     * @return array
+     * @param list<array{name: string, type: string, description: string|null, default: mixed}> $parameters
+     * @return array<string, array{type: string|array<string>, description: string, default: mixed}>
      */
     private function getParametersSchema(array $parameters): array
     {

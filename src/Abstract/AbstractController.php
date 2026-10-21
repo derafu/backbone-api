@@ -15,6 +15,7 @@ namespace Derafu\BackboneApi\Abstract;
 use Derafu\BackboneApi\Contract\DispatcherInterface;
 use Derafu\BackboneApi\Service\HttpStatusResolver;
 use Derafu\BackboneDispatcher\Contract\OperationResultInterface;
+use Derafu\Translation\Exception\Core\TranslatableLogicException as LogicException;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -88,7 +89,7 @@ abstract class AbstractController
      * is never silently answered with a `200`.
      *
      * @param OperationResultInterface $result
-     * @return ResponseInterface|array
+     * @return ResponseInterface|array{meta: array{timestamp: float, data_type: string|null}, data: mixed}
      */
     private function sendOperationResult(OperationResultInterface $result): ResponseInterface|array
     {
@@ -103,6 +104,12 @@ abstract class AbstractController
         }
 
         $problem = $result->getProblem();
+        if ($problem === null) {
+            throw new LogicException(
+                'A failed operation result must contain problem details.'
+            );
+        }
+
         $status = $this->httpStatusResolver->resolve($problem->getThrowable()->getClass());
 
         $response = $this->responseFactory

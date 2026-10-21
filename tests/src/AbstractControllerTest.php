@@ -14,18 +14,23 @@ namespace Derafu\TestsBackboneApi;
 
 use Derafu\BackboneApi\Abstract\AbstractController;
 use Derafu\BackboneApi\Service\HttpStatusResolver;
+use Derafu\BackboneApi\Translation\BackboneApiTranslationResourceProvider;
 use Derafu\BackboneDispatcher\ValueObject\ExecutionMetadata;
 use Derafu\BackboneDispatcher\ValueObject\OperationResult;
 use Derafu\BackboneDispatcher\ValueObject\ProblemDetail;
 use Derafu\BackboneDispatcher\ValueObject\SafeThrowable;
 use Derafu\TestsBackboneApi\Fixture\ExampleController;
 use Derafu\TestsBackboneApi\Fixture\FixedResultDispatcher;
+use Derafu\TestsBackboneApi\Fixture\MisreportedOperationResult;
+use Derafu\Translation\Exception\Core\TranslatableLogicException as LogicException;
+use Derafu\Translation\TranslatorFactory;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Nyholm\Psr7\Response;
 use Nyholm\Psr7\ServerRequest;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
+use Psr\Http\Message\ResponseInterface;
 use RuntimeException;
 
 /**
@@ -40,11 +45,19 @@ use RuntimeException;
  */
 #[CoversClass(AbstractController::class)]
 #[UsesClass(HttpStatusResolver::class)]
+#[UsesClass(BackboneApiTranslationResourceProvider::class)]
 class AbstractControllerTest extends TestCase
 {
+    /** @return array{string, int, int, array<string, int>} */
     private function measure(): array
     {
-        return [date(DATE_ATOM), hrtime(true), memory_get_usage(true), getrusage()];
+        $monotonicStart = hrtime(true);
+        $this->assertIsInt($monotonicStart);
+
+        $cpuUsage = getrusage();
+        $this->assertIsArray($cpuUsage);
+
+        return [date(DATE_ATOM), $monotonicStart, memory_get_usage(true), $cpuUsage];
     }
 
     private function controllerFor(mixed $result): ExampleController
@@ -94,6 +107,9 @@ class AbstractControllerTest extends TestCase
 
         $result = $controller->dispatch($request);
 
+        $this->assertIsArray($result);
+        $this->assertIsArray($result['meta']);
+
         $this->assertSame(['foo' => 'bar'], $result['data']);
         $this->assertSame('array', $result['meta']['data_type']);
         $this->assertIsFloat($result['meta']['timestamp']);
@@ -105,6 +121,9 @@ class AbstractControllerTest extends TestCase
         $request = new ServerRequest('GET', '/api/foo', ['Accept' => '*/*']);
 
         $result = $controller->dispatch($request);
+
+        $this->assertIsArray($result);
+        $this->assertIsArray($result['meta']);
 
         $this->assertSame('a plain string result', $result['data']);
         $this->assertSame('string', $result['meta']['data_type']);
@@ -135,6 +154,9 @@ class AbstractControllerTest extends TestCase
 
         $result = $controller->dispatch($request);
 
+        $this->assertIsArray($result);
+        $this->assertIsArray($result['meta']);
+
         $this->assertSame(['id' => 'INV-001'], $result['data']);
         $this->assertSame(
             'libredte\lib\Core\Package\Billing\Component\Document\Entity\Document',
@@ -161,6 +183,7 @@ class AbstractControllerTest extends TestCase
         $request = new ServerRequest('GET', '/api/foo');
 
         $response = $controller->dispatch($request);
+        $this->assertInstanceOf(ResponseInterface::class, $response);
 
         // RuntimeException is not one of HttpStatusResolver's known
         // dispatcher-generic exceptions, so it falls back to 500 — real
@@ -169,7 +192,44 @@ class AbstractControllerTest extends TestCase
         $this->assertSame('application/json', $response->getHeaderLine('Content-Type'));
 
         $body = json_decode((string) $response->getBody(), true);
+        $this->assertIsArray($body);
+        $this->assertIsArray($body['extensions']);
         $this->assertSame('The parameter "amount" is missing.', $body['detail']);
         $this->assertNull($body['extensions']['data_type']);
+    }
+
+    public function testAFailedResultWithoutProblemDetailsRaisesATranslatedLogicException(): void
+    {
+        [$startedAt, $monotonicStart, $startMemory, $startCpuUsage] = $this->measure();
+        $metadata = ExecutionMetadata::since($startedAt, $monotonicStart, $startMemory, $startCpuUsage);
+        $result = new MisreportedOperationResult(OperationResult::success(null, $metadata, 'NULL'));
+        $controller = $this->controllerFor($result);
+
+        try {
+            $controller->dispatch(new ServerRequest('GET', '/api/foo'));
+            $this->fail('A failed operation result without problem details must be rejected.');
+        } catch (LogicException $exception) {
+            $this->assertSame('A failed operation result must contain problem details.', $exception->getMessage());
+            $translator = TranslatorFactory::create('es', resourceProviders: [new BackboneApiTranslationResourceProvider()]);
+            $this->assertSame('El resultado de una operación fallida debe contener los detalles del problema.', $exception->trans($translator));
+        }
+    }
+
+    public function testASuccessfulNullResultDoesNotRequireProblemDetails(): void
+    {
+        [$startedAt, $monotonicStart, $startMemory, $startCpuUsage] = $this->measure();
+        $metadata = ExecutionMetadata::since($startedAt, $monotonicStart, $startMemory, $startCpuUsage);
+        $operationResult = OperationResult::success(null, $metadata, 'NULL');
+        $controller = $this->controllerFor($operationResult);
+
+        $result = $controller->dispatch(new ServerRequest('GET', '/api/foo'));
+
+        $this->assertSame([
+            'meta' => [
+                'timestamp' => $metadata->getTimestamp(),
+                'data_type' => 'NULL',
+            ],
+            'data' => null,
+        ], $result);
     }
 }
