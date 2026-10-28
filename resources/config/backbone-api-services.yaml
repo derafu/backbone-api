@@ -4,12 +4,31 @@
 #   imports:
 #       - { resource: '../vendor/derafu/backbone-api/resources/config/backbone-api-services.yaml' }
 
+# The application provides PackageRegistryInterface and derafu.backbone_api.url
+# (the complete API URL). Concrete controllers and PSR-17 factories also belong
+# to the application. The shared dispatcher graph owns operation visibility.
+imports:
+    - { resource: '../../../backbone-dispatcher/resources/config/backbone-dispatcher-services.yaml' }
+
 services:
 
     _defaults:
         autowire: true
         autoconfigure: true
         public: false
+
+    Derafu\BackboneApi\Contract\RouterInterface:
+        class: Derafu\BackboneApi\Service\Router
+
+    Derafu\BackboneApi\Contract\DispatcherInterface:
+        class: Derafu\BackboneApi\Service\Dispatcher
+
+    Derafu\BackboneApi\Service\Explorer:
+        arguments:
+            $url: '%derafu.backbone_api.url%'
+
+    Derafu\BackboneApi\Service\Documenter: ~
+    Derafu\BackboneApi\Service\HttpStatusResolver: ~
 
     # Feeds resources/translations into the consuming app's Translator (the
     # app must pass $resourceProviders: !tagged_iterator

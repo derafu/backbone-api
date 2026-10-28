@@ -28,7 +28,6 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\DependencyInjection\ParameterBag\ParameterBag;
 
 /**
  * Real, no-mocks tests for `Explorer`: it now delegates every id, name,
@@ -62,7 +61,7 @@ class ExplorerTest extends TestCase
     {
         return new Explorer(
             new DispatcherExplorer($this->registry, $this->inspector, $policy),
-            new ParameterBag(['env.APP_URL' => 'https://example.test']),
+            'https://example.test/api',
         );
     }
 
@@ -132,7 +131,7 @@ class ExplorerTest extends TestCase
     }
 
     /** @return array<string, array{mixed}> */
-    public static function invalidAppUrls(): array
+    public static function invalidApiUrls(): array
     {
         return [
             'null' => [null],
@@ -143,32 +142,30 @@ class ExplorerTest extends TestCase
         ];
     }
 
-    #[DataProvider('invalidAppUrls')]
-    public function testAppUrlRejectsNonStringConfigurationWithATranslatedException(mixed $url): void
+    #[DataProvider('invalidApiUrls')]
+    public function testApiUrlRejectsNonStringConfigurationWithATranslatedException(mixed $url): void
     {
-        $explorer = new Explorer(
-            new DispatcherExplorer($this->registry, $this->inspector),
-            new ParameterBag(['env.APP_URL' => $url])
-        );
-
         try {
-            $explorer->getUrl();
-            $this->fail('A non-string APP_URL must be rejected.');
+            new Explorer(
+                new DispatcherExplorer($this->registry, $this->inspector),
+                $url
+            );
+            $this->fail('A non-string API URL must be rejected.');
         } catch (InvalidArgumentException $exception) {
-            $this->assertSame('The env.APP_URL parameter must be a string.', $exception->getMessage());
+            $this->assertSame('The API URL must be a string.', $exception->getMessage());
             $translator = TranslatorFactory::create('es', resourceProviders: [new BackboneApiTranslationResourceProvider()]);
-            $this->assertSame('El parámetro env.APP_URL debe ser un string.', $exception->trans($translator));
+            $this->assertSame('La URL de la API debe ser un string.', $exception->trans($translator));
         }
     }
 
-    #[TestWith(['https://example.test', 'https://example.test/api'])]
-    #[TestWith(['https://example.test/', 'https://example.test//api'])]
-    #[TestWith(['', '/api'])]
-    public function testValidStringAppUrlsKeepTheirExistingConcatenation(string $url, string $expected): void
+    #[TestWith(['https://example.test/api', 'https://example.test/api'])]
+    #[TestWith(['https://example.test//api', 'https://example.test//api'])]
+    #[TestWith(['/api', '/api'])]
+    public function testCompleteApiUrlsAreReturnedWithoutNormalization(string $url, string $expected): void
     {
         $explorer = new Explorer(
             new DispatcherExplorer($this->registry, $this->inspector),
-            new ParameterBag(['env.APP_URL' => $url])
+            $url
         );
 
         $this->assertSame($expected, $explorer->getUrl());

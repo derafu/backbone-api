@@ -29,7 +29,6 @@ use Derafu\TestsBackboneApi\Fixture\ExampleWorker;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\DependencyInjection\ParameterBag\ParameterBag;
 
 /**
  * Real, no-mocks tests for `Documenter`: a real package/component/worker
@@ -71,7 +70,7 @@ class DocumenterTest extends TestCase
     {
         $explorer = new Explorer(
             new DispatcherExplorer($this->registry, $this->inspector, $policy),
-            new ParameterBag(['env.APP_URL' => 'https://example.test']),
+            'https://example.test/api',
         );
 
         return new Documenter(

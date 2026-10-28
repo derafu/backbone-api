@@ -1,0 +1,5 @@
+imports:
+    - { resource: services.yaml }
+
+parameters:
+    derafu.backbone_api.url: 'https://public.example.test/api'

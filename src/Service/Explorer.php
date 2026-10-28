@@ -14,7 +14,6 @@ namespace Derafu\BackboneApi\Service;
 
 use Derafu\BackboneDispatcher\Contract\ExplorerInterface;
 use Derafu\Translation\Exception\Logic\TranslatableInvalidArgumentException as InvalidArgumentException;
-use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 
 /**
  * Decorates `derafu/backbone-dispatcher`'s `Explorer` with HATEOAS `_links`
@@ -26,10 +25,21 @@ use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
  */
 class Explorer
 {
+    private readonly string $url;
+
+    /**
+     * @param ExplorerInterface $explorer The shared operation discovery service.
+     * @param mixed $url The complete API URL, validated as a string without normalization.
+     * @throws InvalidArgumentException If the configured URL is not a string.
+     */
     public function __construct(
         private ExplorerInterface $explorer,
-        private ParameterBagInterface $parameterBag
+        mixed $url
     ) {
+        if (!is_string($url)) {
+            throw new InvalidArgumentException('The API URL must be a string.');
+        }
+        $this->url = $url;
     }
 
     /**
@@ -527,12 +537,7 @@ class Explorer
      */
     public function getUrl(): string
     {
-        $url = $this->parameterBag->get('env.APP_URL');
-        if (!is_string($url)) {
-            throw new InvalidArgumentException('The env.APP_URL parameter must be a string.');
-        }
-
-        return $url . '/api';
+        return $this->url;
     }
 
     /**

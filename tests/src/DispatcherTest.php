@@ -47,7 +47,6 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ServerRequestInterface;
-use Symfony\Component\DependencyInjection\ParameterBag\ParameterBag;
 
 #[CoversClass(Dispatcher::class)]
 #[UsesClass(InvalidRequestBodyException::class)]
@@ -69,7 +68,7 @@ final class DispatcherTest extends TestCase
         $caster = new Caster(new ObjectFactoryRegistry());
         $explorer = new Explorer(
             new DispatcherExplorer($registry, $inspector),
-            new ParameterBag(['env.APP_URL' => 'https://example.test']),
+            'https://example.test/api',
         );
         $documenter = new Documenter($caster, $explorer, new HttpStatusResolver());
         $direct = new DirectDispatcher($registry, $inspector, new Resolver($inspector, $caster, new Validator()));

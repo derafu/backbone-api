@@ -1,0 +1,8 @@
+imports:
+    - { resource: services.yaml }
+
+services:
+    Derafu\BackboneDispatcher\Contract\OperationPolicyInterface:
+        class: Derafu\BackboneDispatcher\Service\Policy\AllowListOperationPolicy
+        arguments:
+            $patterns: ['example_package.example_component.example_worker::getStatus']

@@ -33,7 +33,6 @@ use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 use stdClass;
-use Symfony\Component\DependencyInjection\ParameterBag\ParameterBag;
 
 #[CoversClass(Documenter::class)]
 #[UsesClass(Explorer::class)]
@@ -51,7 +50,7 @@ class OperationResultsDocumentationTest extends TestCase
             new DispatcherExplorer($registry, new Inspector(), new AllowListOperationPolicy([
                 'example_package.example_component.example_worker::' . $operation,
             ])),
-            new ParameterBag(['env.APP_URL' => 'https://example.test'])
+            'https://example.test/api'
         );
 
         return new Documenter(new Caster(new ObjectFactoryRegistry()), $explorer, new HttpStatusResolver());

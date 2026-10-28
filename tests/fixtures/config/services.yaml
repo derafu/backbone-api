@@ -1,0 +1,38 @@
+imports:
+    - { resource: '../../../resources/config/backbone-api-services.yaml' }
+
+parameters:
+    derafu.backbone_api.url: 'https://example.test/api'
+
+services:
+    _defaults:
+        autowire: true
+
+    Derafu\Backbone\Contract\PackageRegistryInterface:
+        class: Derafu\TestsBackboneApi\Fixture\ExamplePackageRegistry
+        calls:
+            - registerPackage: [example_package, '@Derafu\TestsBackboneApi\Fixture\ExamplePackage']
+
+    Derafu\TestsBackboneApi\Fixture\ExamplePackage:
+        arguments:
+            $components:
+                example_component: '@Derafu\TestsBackboneApi\Fixture\ExampleComponent'
+
+    Derafu\TestsBackboneApi\Fixture\ExampleComponent:
+        arguments:
+            $workers:
+                example_worker: '@Derafu\TestsBackboneApi\Fixture\ExampleWorker'
+
+    Derafu\TestsBackboneApi\Fixture\ExampleWorker: ~
+    Derafu\TestsBackboneApi\Fixture\ExampleController: ~
+
+    Psr\Http\Message\ResponseFactoryInterface:
+        class: Nyholm\Psr7\Factory\Psr17Factory
+
+    app.translator:
+        class: Symfony\Component\Translation\Translator
+        factory: ['Derafu\Translation\TranslatorFactory', create]
+        arguments:
+            $defaultLocale: es
+            $fallbackLocales: [en]
+            $resourceProviders: !tagged_iterator derafu_translation.resource_provider

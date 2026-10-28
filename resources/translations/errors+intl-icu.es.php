@@ -15,8 +15,8 @@ return [
         'El resultado de la operación {scenario} debe ser un arreglo; se recibió {type}.',
     'The description of operation result {scenario} must be string|null; {type} given.' =>
         'La descripción del resultado de la operación {scenario} debe ser string|null; se recibió {type}.',
-    'The env.APP_URL parameter must be a string.' =>
-        'El parámetro env.APP_URL debe ser un string.',
+    'The API URL must be a string.' =>
+        'La URL de la API debe ser un string.',
     'The API request body must contain valid JSON.' =>
         'El cuerpo de la solicitud de la API debe contener JSON válido.',
     'The API request body must be a JSON object.' =>
