@@ -56,8 +56,14 @@ class AbstractControllerTest extends TestCase
 
         $cpuUsage = getrusage();
         $this->assertIsArray($cpuUsage);
+        $startCpuUsage = [];
+        foreach ($cpuUsage as $key => $value) {
+            $this->assertIsString($key);
+            $this->assertIsInt($value);
+            $startCpuUsage[$key] = $value;
+        }
 
-        return [date(DATE_ATOM), $monotonicStart, memory_get_usage(true), $cpuUsage];
+        return [date(DATE_ATOM), $monotonicStart, memory_get_usage(true), $startCpuUsage];
     }
 
     private function controllerFor(mixed $result): ExampleController

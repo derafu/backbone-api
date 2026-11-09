@@ -375,19 +375,18 @@ class Documenter
                 ]);
             }
 
-            if (array_key_exists('description', $result)
-                && $result['description'] !== null
-                && !is_string($result['description'])
-            ) {
+            $description = $result['description'] ?? null;
+
+            if ($description !== null && !is_string($description)) {
                 throw new InvalidArgumentException([
                     'The description of operation result {scenario} must be string|null; {type} given.',
                     'scenario' => $scenario,
-                    'type' => get_debug_type($result['description']),
+                    'type' => get_debug_type($description),
                 ]);
             }
 
-            if (!empty($result['description'])) {
-                $dataByStatus[$status]['descriptions'][] = $result['description'];
+            if (!empty($description)) {
+                $dataByStatus[$status]['descriptions'][] = $description;
             }
 
             if (array_key_exists('example', $result)) {
